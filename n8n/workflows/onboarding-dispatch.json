@@ -1,0 +1,98 @@
+[
+  {
+    "id": "AegisOnboardingDispatch02",
+    "name": "AegisFlow — Workflow #2: Clinician HITL Approval & Blind Notification Dispatch",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "aegis-onboarding-dispatch",
+          "responseMode": "onReceived",
+          "options": {}
+        },
+        "id": "wf2-node-01",
+        "name": "01. HITL Approval Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [-640, -80],
+        "webhookId": "aegis-onboarding-dispatch-02"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Verify HMAC & prepare Blind Notification Dispatch request (ADR-001)\nconst crypto = require('crypto');\nconst body = $input.first().json.body || $input.first().json;\n\nconst notifyPayload = {\n  patient_uuid: body.patient_uuid,\n  template: 'ONBOARDING_MAGIC_LINK',\n  onboarding_url: body.onboarding_url\n};\n\nconst rawBody = JSON.stringify(notifyPayload);\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst secret = $env.AEGIS_WEBHOOK_SECRET || 'aegis-dev-hmac-webhook-secret-key-2026';\nconst signature = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');\n\nreturn [{\n  json: {\n    patient_uuid: body.patient_uuid,\n    hubspot_deal_stage: 'Approved - Onboarding Sent',\n    rawBody,\n    signature,\n    timestamp\n  }\n}];"
+        },
+        "id": "wf2-node-02",
+        "name": "02. HubSpot Deal Stage -> Approved & Sign Blind Notify",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-340, -80]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:3000/api/internal/notify",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-aegis-signature",
+                "value": "={{ $json.signature }}"
+              },
+              {
+                "name": "x-aegis-timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.rawBody }}",
+          "options": {}
+        },
+        "id": "wf2-node-03",
+        "name": "03. Blind Notification Dispatch (/api/internal/notify)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-20, -80],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      }
+    ],
+    "connections": {
+      "01. HITL Approval Webhook": {
+        "main": [
+          [
+            {
+              "node": "02. HubSpot Deal Stage -> Approved & Sign Blind Notify",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "02. HubSpot Deal Stage -> Approved & Sign Blind Notify": {
+        "main": [
+          [
+            {
+              "node": "03. Blind Notification Dispatch (/api/internal/notify)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "none",
+      "saveDataErrorExecution": "all"
+    }
+  }
+]

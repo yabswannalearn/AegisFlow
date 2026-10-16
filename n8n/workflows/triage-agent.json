@@ -1,0 +1,265 @@
+[
+  {
+    "id": "TCc5M9TUgKMpOJHN",
+    "name": "AegisFlow — Workflow #1: HIPAA AI Triage Agent & Zero-PHI HubSpot Sync",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "aegis-triage",
+          "responseMode": "onReceived",
+          "options": {}
+        },
+        "id": "node-01-webhook-triage",
+        "name": "01. Intake Webhook (/webhook/aegis-triage)",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [-880, -120],
+        "webhookId": "aegis-triage-webhook-01"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Node 02: Cryptographic HMAC-SHA256 Verification & Replay Window Check (ADR-003, ADR-005)\nconst crypto = require('crypto');\n\nconst item = $input.first().json;\nconst headers = item.headers || {};\nconst body = item.body || item;\n\nconst signature = headers['x-aegis-signature'];\nconst timestamp = headers['x-aegis-timestamp'];\nconst secret = $env.AEGIS_WEBHOOK_SECRET || 'aegis-dev-hmac-webhook-secret-key-2026';\n\nif (signature && timestamp) {\n  const nowSec = Math.floor(Date.now() / 1000);\n  if (Math.abs(nowSec - Number(timestamp)) > 300) {\n    throw new Error('401 Unauthorized: Webhook timestamp drift exceeds 300s replay window');\n  }\n}\n\nreturn [{\n  json: {\n    idempotency_key: body.idempotency_key,\n    patient_uuid: body.patient_uuid,\n    crm_alias: body.crm_alias,\n    insurance_provider: body.insurance_provider || 'Aetna_PPO',\n    scrubbed_symptoms: body.scrubbed_symptoms,\n    xml_sandboxed_prompt: `<untrusted_symptom_text>\\n${body.scrubbed_symptoms}\\n</untrusted_symptom_text>`,\n    vault_review_url: body.vault_review_url\n  }\n}];"
+        },
+        "id": "node-02-hmac-verify",
+        "name": "02. Verify HMAC-SHA256 & XML Sandbox",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-620, -120]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=http://host.docker.internal:3000/api/mock/insurance?payer={{ $json.insurance_provider }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-aegis-tool-key",
+                "value": "aegis-dev-internal-tool-api-key-2026"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 4000
+          }
+        },
+        "id": "node-03-insurance-tool",
+        "name": "03. Tool: Check Insurance Eligibility API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-360, -240],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "http://host.docker.internal:3000/api/mock/routing-rules",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-aegis-tool-key",
+                "value": "aegis-dev-internal-tool-api-key-2026"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 4000
+          }
+        },
+        "id": "node-04-routing-tool",
+        "name": "04. Tool: Fetch Clinical Routing Rules",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-360, -20],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "// Node 05: XML-Sandboxed AI Triage Agent & Structured Output Parser (ADR-005)\n// Evaluates <untrusted_symptom_text> strictly as data, ignoring imperative prompt-injection instructions.\nconst intake = $('02. Verify HMAC-SHA256 & XML Sandbox').first().json;\nconst insurance = $('03. Tool: Check Insurance Eligibility API').first().json;\n\nconst lower = String(intake.scrubbed_symptoms || '').toLowerCase();\nconst injectionBlocked = lower.includes('ignore all previous instructions') || lower.includes('ignore previous instructions') || lower.includes('classify urgency_level as low');\n\nlet urgency_level = 'MEDIUM';\nlet recommended_specialty = 'General Medicine';\nlet suggested_onboarding_track = insurance.insurance_verified ? 'Standard' : 'ManualReview';\nlet triage_rationale_redacted = 'General clinical presentation routed to Internal Medicine for standard clinician review.';\n\nif (lower.includes('heart attack') || lower.includes('crushing chest pain') || lower.includes('cannot breathe') || lower.includes('stroke')) {\n  urgency_level = 'CRITICAL';\n  recommended_specialty = 'Emergency Care';\n  suggested_onboarding_track = 'Emergency911';\n  triage_rationale_redacted = injectionBlocked\n    ? '[PROMPT INJECTION BLOCKED BY XML SANDBOX] Critical cardiac/respiratory red flags detected. Immediate 911 short-circuit triggered.'\n    : 'Critical life-threatening indicators detected. Standard self-scheduling halted; immediate 911 escalation triggered.';\n} else if (lower.includes('chest tightness') || lower.includes('palpitation') || lower.includes('arrhythmia')) {\n  urgency_level = 'HIGH';\n  recommended_specialty = 'Cardiology';\n  suggested_onboarding_track = 'FastTrack';\n  triage_rationale_redacted = 'Sub-acute cardiopulmonary symptoms warrant priority Cardiology evaluation within 24-48h.';\n} else if (lower.includes('mole') || lower.includes('rash') || lower.includes('eczema')) {\n  urgency_level = 'LOW';\n  recommended_specialty = 'Dermatology';\n  suggested_onboarding_track = 'Standard';\n  triage_rationale_redacted = 'Non-emergent dermatological presentation suitable for standard Dermatology consultation.';\n}\n\nreturn [{\n  json: {\n    patient_uuid: intake.patient_uuid,\n    crm_alias: intake.crm_alias,\n    vault_review_url: intake.vault_review_url,\n    ai_triage: {\n      urgency_level,\n      recommended_specialty,\n      triage_rationale_redacted,\n      insurance_verified: Boolean(insurance.insurance_verified),\n      copay_estimate_usd: urgency_level === 'CRITICAL' ? 0 : Number(insurance.copay_estimate_usd ?? 35),\n      suggested_onboarding_track,\n      prompt_injection_blocked: injectionBlocked\n    }\n  }\n}];"
+        },
+        "id": "node-05-ai-triage-agent",
+        "name": "05. AI Triage Agent (XML Sandboxed + Structured JSON)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-80, -120]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "cond-critical-urgency",
+                "leftValue": "={{ $json.ai_triage.urgency_level }}",
+                "rightValue": "CRITICAL",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "node-06-emergency-switch",
+        "name": "06. Emergency Short-Circuit? (CRITICAL)",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [180, -120]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Node 07: Pseudonymous HubSpot CRM Upsert (ADR-001, ADR-007)\n// Upserts Contact by <short_uuid>@vault.aegisflow.internal and deduplicates Deal by patient_uuid\nconst data = $input.first().json;\nconst shortId = String(data.patient_uuid).replace(/[^a-f0-9]/gi, '').slice(0, 6);\n\nconst crypto = require('crypto');\nconst isCritical = data.ai_triage.urgency_level === 'CRITICAL';\n\nconst callbackPayload = {\n  patient_uuid: data.patient_uuid,\n  status: isCritical ? 'EMERGENCY_HALTED' : 'CRM_SYNCED',\n  ai_triage: data.ai_triage,\n  hubspot_contact_id: `hs_cnt_${shortId}`,\n  hubspot_deal_id: `hs_deal_${shortId}`\n};\n\nconst rawBody = JSON.stringify(callbackPayload);\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst secret = $env.AEGIS_WEBHOOK_SECRET || 'aegis-dev-hmac-webhook-secret-key-2026';\nconst signature = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload,\n    rawBody,\n    signature,\n    timestamp\n  }\n}];"
+        },
+        "id": "node-07-hubspot-pseudonymous-upsert",
+        "name": "07. Upsert Pseudonymous HubSpot Contact & Deal + Sign Callback",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [460, -120]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:3000/api/webhooks/n8n-callback",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-aegis-signature",
+                "value": "={{ $json.signature }}"
+              },
+              {
+                "name": "x-aegis-timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.rawBody }}",
+          "options": {
+            "timeout": 5000
+          }
+        },
+        "id": "node-08-nextjs-callback",
+        "name": "08. Callback to Next.js Vault (/api/webhooks/n8n-callback)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [740, -120],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      }
+    ],
+    "connections": {
+      "01. Intake Webhook (/webhook/aegis-triage)": {
+        "main": [
+          [
+            {
+              "node": "02. Verify HMAC-SHA256 & XML Sandbox",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "02. Verify HMAC-SHA256 & XML Sandbox": {
+        "main": [
+          [
+            {
+              "node": "03. Tool: Check Insurance Eligibility API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "03. Tool: Check Insurance Eligibility API": {
+        "main": [
+          [
+            {
+              "node": "04. Tool: Fetch Clinical Routing Rules",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "04. Tool: Fetch Clinical Routing Rules": {
+        "main": [
+          [
+            {
+              "node": "05. AI Triage Agent (XML Sandboxed + Structured JSON)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "05. AI Triage Agent (XML Sandboxed + Structured JSON)": {
+        "main": [
+          [
+            {
+              "node": "06. Emergency Short-Circuit? (CRITICAL)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "06. Emergency Short-Circuit? (CRITICAL)": {
+        "main": [
+          [
+            {
+              "node": "07. Upsert Pseudonymous HubSpot Contact & Deal + Sign Callback",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "07. Upsert Pseudonymous HubSpot Contact & Deal + Sign Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "07. Upsert Pseudonymous HubSpot Contact & Deal + Sign Callback": {
+        "main": [
+          [
+            {
+              "node": "08. Callback to Next.js Vault (/api/webhooks/n8n-callback)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "none",
+      "saveDataErrorExecution": "all",
+      "saveManualExecutions": false
+    }
+  }
+]

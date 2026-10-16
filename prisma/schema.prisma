@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VaultStatus {
+  SCRUBBED_DISPATCHED
+  WEBHOOK_RETRY_PENDING
+  AI_TRIAGED
+  CRM_SYNCED
+  TRIAGE_FAILED_MANUAL_REVIEW
+  EMERGENCY_HALTED
+  APPROVED
+  ONBOARDED
+}
+
+enum ConsentType {
+  HIPAA_INTAKE
+  TCPA_SMS
+  TELEHEALTH_NPP
+}
+
+enum ActorRole {
+  PATIENT
+  N8N_SYSTEM
+  CLINICIAN
+}
+
+enum AuditAction {
+  INTAKE_SUBMITTED
+  PII_SCRUBBED
+  AI_TRIAGED
+  TRIAGE_FAILED
+  PHI_DECRYPTED_VIEW
+  ONBOARDING_APPROVED
+  BLIND_NOTIFY_SENT
+  KYC_VERIFIED
+  ONBOARDING_COMPLETED
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model PatientVault {
+  id                  String          @id @default(uuid()) @db.Uuid
+  emailHash           String          @db.VarChar(64)
+  encryptedPiiJson    String          @db.Text
+  encryptedSymptoms   String          @db.Text
+  encryptedKycJson    String?         @db.Text
+  scrubbedSymptoms    String          @db.Text
+  redactedSpansJson   Json?
+  aiTriageJson        Json?
+  onboardingTokenHash String?         @unique @db.VarChar(64)
+  tokenExpiresAt      DateTime?
+  tokenUsedAt         DateTime?
+  appointmentSlot     DateTime?
+  assignedDoctor      String?         @db.VarChar(120)
+  status              VaultStatus     @default(SCRUBBED_DISPATCHED)
+  hubspotContactId    String?         @db.VarChar(64)
+  hubspotDealId       String?         @db.VarChar(64)
+  lastError           String?         @db.Text
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  consents            ConsentRecord[]
+  auditLogs           AuditLog[]
+
+  @@index([emailHash])
+  @@index([status])
+}
+
+model ConsentRecord {
+  id            String       @id @default(uuid()) @db.Uuid
+  patientId     String       @db.Uuid
+  consentType   ConsentType
+  accepted      Boolean      @default(true)
+  signatureText String?      @db.VarChar(255)
+  ipAddress     String       @db.VarChar(64)
+  userAgent     String       @db.Text
+  policyVersion String       @db.VarChar(32)
+  createdAt     DateTime     @default(now())
+
+  patient       PatientVault @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+model AuditLog {
+  id        String       @id @default(uuid()) @db.Uuid
+  actorId   String       @db.VarChar(128)
+  actorRole ActorRole
+  patientId String       @db.Uuid
+  action    AuditAction
+  metadata  Json?
+  ipAddress String       @db.VarChar(64)
+  createdAt DateTime     @default(now())
+
+  patient   PatientVault @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([patientId, createdAt])
+}
+
+model WebhookIdempotency {
+  key          String            @id @db.VarChar(128)
+  workflowName String            @db.VarChar(64)
+  patientId    String?           @db.Uuid
+  status       IdempotencyStatus @default(PROCESSING)
+  processedAt  DateTime          @default(now())
+}

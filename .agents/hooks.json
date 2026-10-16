@@ -1,0 +1,44 @@
+{
+  "load-project-context": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node scripts/load-context.js",
+        "timeout": 15
+      }
+    ]
+  },
+
+  "post-edit-checks": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/post-edit-checks.js",
+            "timeout": 200
+          }
+        ]
+      }
+    ]
+  },
+  "guardrail-reminder": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node scripts/reminder.js",
+        "timeout": 10
+      }
+    ]
+  },
+  "progress-and-tests-gate": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node scripts/stop-gate.js",
+        "timeout": 150
+      }
+    ]
+  }
+}

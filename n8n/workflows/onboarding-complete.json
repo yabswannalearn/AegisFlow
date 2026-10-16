@@ -1,0 +1,52 @@
+[
+  {
+    "id": "AegisOnboardingComplete03",
+    "name": "AegisFlow — Workflow #3: Patient Onboarding Completion & HubSpot Closed-Won Sync",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "aegis-onboarding-complete",
+          "responseMode": "onReceived",
+          "options": {}
+        },
+        "id": "wf3-node-01",
+        "name": "01. Onboarding Complete Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [-560, -80],
+        "webhookId": "aegis-onboarding-complete-03"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Node 02: Transition HubSpot Deal -> Closed Won & Contact lifecyclestage -> customer\nconst body = $input.first().json.body || $input.first().json;\n\nreturn [{\n  json: {\n    patient_uuid: body.patient_uuid,\n    hubspot_deal_stage: 'Closed Won - Appointment Booked',\n    hubspot_contact_lifecyclestage: 'customer',\n    appointment_datetime: body.appointment_datetime,\n    clinic_notification: `New Patient Onboarded (Zero-PHI Alias Patient_${String(body.patient_uuid).slice(0, 6)}): Deal moved to Closed-Won.`\n  }\n}];"
+        },
+        "id": "wf3-node-02",
+        "name": "02. HubSpot Deal -> Closed Won & Contact -> Customer",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-240, -80]
+      }
+    ],
+    "connections": {
+      "01. Onboarding Complete Webhook": {
+        "main": [
+          [
+            {
+              "node": "02. HubSpot Deal -> Closed Won & Contact -> Customer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "none",
+      "saveDataErrorExecution": "all"
+    }
+  }
+]

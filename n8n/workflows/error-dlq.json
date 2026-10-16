@@ -1,0 +1,89 @@
+[
+  {
+    "id": "AegisErrorDlq04",
+    "name": "AegisFlow — Workflow #4: Global Dead-Letter Queue (DLQ) Error Recovery",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "wf4-node-01",
+        "name": "01. Global Error Trigger",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [-620, -80]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Node 02: Strip any payload bodies and sign TRIAGE_FAILED_MANUAL_REVIEW callback to Next.js (ADR-004)\nconst crypto = require('crypto');\nconst errData = $input.first().json;\n\nconst dlqPayload = {\n  patient_uuid: errData.execution?.patient_uuid || 'unknown',\n  status: 'TRIAGE_FAILED_MANUAL_REVIEW',\n  error_message: `n8n DLQ caught failure in node: ${errData.execution?.lastNodeExecuted || 'unknown'}`\n};\n\nconst rawBody = JSON.stringify(dlqPayload);\nconst timestamp = String(Math.floor(Date.now() / 1000));\nconst secret = $env.AEGIS_WEBHOOK_SECRET || 'aegis-dev-hmac-webhook-secret-key-2026';\nconst signature = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');\n\nreturn [{\n  json: {\n    rawBody,\n    signature,\n    timestamp\n  }\n}];"
+        },
+        "id": "wf4-node-02",
+        "name": "02. Sanitize Error & Sign DLQ Callback",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-320, -80]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://host.docker.internal:3000/api/webhooks/n8n-callback",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-aegis-signature",
+                "value": "={{ $json.signature }}"
+              },
+              {
+                "name": "x-aegis-timestamp",
+                "value": "={{ $json.timestamp }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.rawBody }}",
+          "options": {}
+        },
+        "id": "wf4-node-03",
+        "name": "03. Notify Next.js Vault (TRIAGE_FAILED_MANUAL_REVIEW)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-20, -80]
+      }
+    ],
+    "connections": {
+      "01. Global Error Trigger": {
+        "main": [
+          [
+            {
+              "node": "02. Sanitize Error & Sign DLQ Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "02. Sanitize Error & Sign DLQ Callback": {
+        "main": [
+          [
+            {
+              "node": "03. Notify Next.js Vault (TRIAGE_FAILED_MANUAL_REVIEW)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataSuccessExecution": "none",
+      "saveDataErrorExecution": "all"
+    }
+  }
+]

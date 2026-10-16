@@ -1,0 +1,1069 @@
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="UTF-8">
+  <title>AegisFlow — Product Requirements Document</title>
+  <style>
+    @page { margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    html { background-color: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+        html { background-color: #1f1f1f; }
+    }
+    body {
+        padding: 24px 0;
+        margin: 0 auto;
+        max-width: 900px !important;
+        border: none !important;
+        background: transparent !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #1e293b;
+        font-size: 9.5pt;
+        line-height: 1.35;
+    }
+    .page {
+        height: 297mm;
+        margin: 0 auto 12px auto;
+        padding: 16mm 18mm 12mm 18mm;
+        background-color: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+    }
+    @media screen and (max-width: 600px) {
+        body {
+            padding: 16px 0;
+        }
+        .page {
+            margin: 0 auto 8px auto;
+            border: none;
+            padding: 12px 20px;
+        }
+    }
+    .page-content {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .page-content > * + * {
+        margin-top: 20px;
+    }
+    .page.compact, body.compact .page {
+        font-size: 9.5pt;
+        line-height: 1.35;
+    }
+    .page.compact .page-content > * + *, body.compact .page-content > * + * {
+        margin-top: 12px;
+    }
+    .page-content > :is(h1, h2, h3, h4) + * {
+        margin-top: 8px;
+    }
+    .page-footer {
+        flex-shrink: 0;
+        margin-top: auto;
+        padding-top: 4mm;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 8.5pt;
+        color: #64748b;
+    }
+    @media print {
+        *, *::before, *::after {
+            box-shadow: none !important;
+            text-shadow: none !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        body { padding: 0; background: none; }
+        .page {
+            margin: 0;
+            border: none;
+            height: 297mm;
+            break-after: page;
+            page-break-after: always;
+        }
+        .page:last-child { break-after: auto; page-break-after: auto; }
+    }
+    [contenteditable]:focus { outline: none; }
+
+    /* Custom PRD Styling */
+    h1, h2, h3, h4, p { margin: 0; }
+    
+    .masthead {
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 16px 20px;
+      border-radius: 6px;
+      border-left: 5px solid #0d9488;
+    }
+    .masthead-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .doc-badge {
+      background-color: #0d9488;
+      color: #ffffff;
+      font-size: 8.5pt;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .doc-version {
+      font-size: 8.5pt;
+      color: #94a3b8;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .masthead h1 {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .masthead-sub {
+      font-size: 9.5pt;
+      color: #cbd5e1;
+      margin-bottom: 10px;
+    }
+    .meta-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding-top: 8px;
+      border-top: 1px solid #334155;
+      font-size: 8.5pt;
+    }
+    .meta-item span {
+      color: #94a3b8;
+      display: block;
+      font-size: 8.5pt;
+    }
+    .meta-item strong {
+      color: #f1f5f9;
+      font-weight: 600;
+    }
+
+    h2 {
+      font-size: 12.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      padding-bottom: 4px;
+      border-bottom: 2px solid #0d9488;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h2 .sec-tag {
+      font-size: 8.5pt;
+      font-weight: 600;
+      color: #0d9488;
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+
+    h3 {
+      font-size: 10.5pt;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    p {
+      color: #334155;
+    }
+
+    .callout-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .panel {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 4px solid #0f172a;
+      border-radius: 4px;
+      padding: 10px 12px;
+    }
+    .panel.teal {
+      border-left-color: #0d9488;
+      background-color: #f0fdfa;
+      border-color: #99f6e4;
+    }
+    .panel-title {
+      font-weight: 700;
+      font-size: 9.5pt;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.5pt;
+    }
+    th {
+      background-color: #0f172a;
+      color: #ffffff;
+      text-align: left;
+      padding: 6px 10px;
+      font-weight: 600;
+      border: 1px solid #0f172a;
+    }
+    td {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      vertical-align: top;
+      color: #334155;
+    }
+    tr:nth-child(even) td {
+      background-color: #f8fafc;
+    }
+
+    code, .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 8.5pt;
+      background-color: #f1f5f9;
+      color: #0f766e;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    .code-block {
+      background-color: #0f172a;
+      color: #e2e8f0;
+      padding: 10px 12px;
+      border-radius: 4px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 8.5pt;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      border-left: 4px solid #0d9488;
+    }
+
+    ul.req-list {
+      margin: 0;
+      padding-left: 16px;
+      color: #334155;
+    }
+    ul.req-list li {
+      margin-bottom: 5px;
+    }
+    ul.req-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    .req-id {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-weight: 700;
+      color: #0f766e;
+      font-size: 8.5pt;
+    }
+
+    .card-grid-2x2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .spec-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 9px 11px;
+      background-color: #ffffff;
+    }
+    .spec-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .spec-card-title {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 9pt;
+    }
+    .badge-outline {
+      font-size: 8.5pt;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: #0d9488;
+      background-color: #f0fdfa;
+      padding: 1px 6px;
+      border-radius: 3px;
+      border: 1px solid #99f6e4;
+    }
+
+    .diagram-frame {
+      border: 1px solid #cbd5e1;
+      background-color: #f8fafc;
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .diagram-caption {
+      font-size: 8.5pt;
+      color: #64748b;
+      text-align: center;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+    .flow-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .flow-step {
+      background-color: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-top: 3px solid #0d9488;
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .flow-step-num {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #0d9488;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .flow-step-title {
+      font-weight: 700;
+      font-size: 9pt;
+      color: #0f172a;
+      margin-bottom: 3px;
+    }
+  </style>
+<style data-bard-injected="true">
+@media screen {
+    html {
+        background-color: #ffffff;
+    }
+    body {
+        padding: 8px 0 24px 0;
+    }
+}
+@media screen and (prefers-color-scheme: dark) {
+    html {
+        background-color: #1f1f1f;
+    }
+}
+@media screen and (max-width: 600px) {
+    body {
+        padding: 4px 0 16px 0;
+        margin: 0 auto;
+    }
+}
+</style></head>
+<body class="compact">
+  <div contenteditable="true">
+
+    <!-- page 1 budget (Compact): masthead 70 + h2 11 + prose 60 + callout-split 98 + h2 11 + svg diagram (32mm=77 + frame 24 + cap 14) 115 + h2 11 + table 6 rows 110 + 6 gaps 48 = 534 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+        
+        <header class="masthead">
+          <div class="masthead-top">
+            <span class="doc-badge">Product Requirements Document</span>
+            <span class="doc-version">SPEC-ID: AF-HIPAA-02 // REV 2.0 (MASTER)</span>
+          </div>
+          <h1>AegisFlow — HIPAA AI Intake, Triage &amp; HubSpot Engine</h1>
+          <div class="masthead-sub">Hybrid Full-Stack Security Gateway (Next.js) &amp; Stateless Workflow Orchestration (Self-Hosted n8n)</div>
+          <div class="meta-bar">
+            <div class="meta-item">
+              <span>Architecture Pattern</span>
+              <strong>Next.js BFF Vault + Dockerized n8n</strong>
+            </div>
+            <div class="meta-item">
+              <span>Regulatory Scope</span>
+              <strong>US HIPAA (PHI), TCPA &amp; Telehealth NPP</strong>
+            </div>
+            <div class="meta-item">
+              <span>Target Engineering Roles</span>
+              <strong>SWE, Applied AI Eng, Automation Spec</strong>
+            </div>
+          </div>
+        </header>
+
+        <h2><span>1. Executive Summary &amp; Architectural Problem</span> <span class="sec-tag">SEC-01</span></h2>
+        <p>US telehealth providers face a critical compliance bottleneck when integrating modern LLM triage agents and marketing CRMs like HubSpot. Standard low-code automation pipelines transmit raw Protected Health Information (PHI) directly into third-party AI training logs and unencrypted CRM properties, violating <strong>HIPAA privacy mandates</strong> and <strong>TCPA telemarketing consent laws</strong>.</p>
+
+        <div class="callout-split">
+          <div class="panel">
+            <div class="panel-title">Next.js Client &amp; Server BFF (The HIPAA Vault)</div>
+            <p>Acts as the deterministic security boundary. Handles patient intake, TCPA/HIPAA consent logging, AES-256-GCM field-level encryption in PostgreSQL, regex PII scrubbing, immutable audit logging, and clinician Role-Based Access Control (RBAC).</p>
+          </div>
+          <div class="panel teal">
+            <div class="panel-title">Self-Hosted n8n Engine (Stateless Orchestrator)</div>
+            <p>Receives strictly anonymized payloads via HMAC-signed webhooks. Executes the AI Triage Agent with tool-calling, syncs HubSpot CRM pipelines using Vault reference URLs, and orchestrates closed-loop patient onboarding.</p>
+          </div>
+        </div>
+
+        <h2><span>2. End-to-End 5-Stage System Topology</span> <span class="sec-tag">SEC-02</span></h2>
+        <figure class="diagram-frame" style="margin: 0;">
+          <svg role="img" viewBox="0 0 720 115" style="width: 100%; height: 31mm; display: block;">
+            <title>AegisFlow 5-Stage Closed-Loop Architecture Data Flow</title>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#0d9488"></path>
+              </marker>
+            </defs>
+            <!-- Stage 1 -->
+            <rect x="4" y="16" width="126" height="80" rx="5" fill="#0f172a"></rect>
+            <text x="67" y="36" fill="#ffffff" font-size="9.5" font-weight="bold" text-anchor="middle">1. Intake Portal</text>
+            <text x="67" y="52" fill="#94a3b8" font-size="8" text-anchor="middle">Next.js /intake</text>
+            <text x="67" y="66" fill="#2dd4bf" font-size="7.5" text-anchor="middle">AES-256 + PII Scrub</text>
+            <text x="67" y="80" fill="#cbd5e1" font-size="7.5" text-anchor="middle">TCPA/HIPAA Log</text>
+
+            <line x1="130" y1="56" x2="148" y2="56" stroke="#0d9488" stroke-width="2" marker-end="url(#arrow)"></line>
+
+            <!-- Stage 2 -->
+            <rect x="150" y="16" width="132" height="80" rx="5" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"></rect>
+            <text x="216" y="36" fill="#0f172a" font-size="9.5" font-weight="bold" text-anchor="middle">2. AI Triage (#1)</text>
+            <text x="216" y="52" fill="#334155" font-size="8" text-anchor="middle">n8n Agent + Tools</text>
+            <text x="216" y="66" fill="#0f766e" font-size="7.5" font-weight="bold" text-anchor="middle">Insurance Check API</text>
+            <text x="216" y="80" fill="#64748b" font-size="7.5" text-anchor="middle">HubSpot Lead + Deal</text>
+
+            <line x1="282" y1="56" x2="300" y2="56" stroke="#0d9488" stroke-width="2" marker-end="url(#arrow)"></line>
+
+            <!-- Stage 3 -->
+            <rect x="302" y="16" width="132" height="80" rx="5" fill="#0f172a"></rect>
+            <text x="368" y="36" fill="#ffffff" font-size="9.5" font-weight="bold" text-anchor="middle">3. HITL Vault (#2)</text>
+            <text x="368" y="52" fill="#cbd5e1" font-size="8" text-anchor="middle">/admin/vault/[id]</text>
+            <text x="368" y="66" fill="#2dd4bf" font-size="7.5" text-anchor="middle">Audited Decryption</text>
+            <text x="368" y="80" fill="#94a3b8" font-size="7.5" text-anchor="middle">Sends Magic Link</text>
+
+            <line x1="434" y1="56" x2="452" y2="56" stroke="#0d9488" stroke-width="2" marker-end="url(#arrow)"></line>
+
+            <!-- Stage 4 -->
+            <rect x="454" y="16" width="128" height="80" rx="5" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.5"></rect>
+            <text x="518" y="36" fill="#0f172a" font-size="9.5" font-weight="bold" text-anchor="middle">4. Onboarding UI</text>
+            <text x="518" y="52" fill="#334155" font-size="8" text-anchor="middle">/onboarding/[token]</text>
+            <text x="518" y="66" fill="#0f766e" font-size="7.5" font-weight="bold" text-anchor="middle">KYC + NPP E-Sign</text>
+            <text x="518" y="80" fill="#64748b" font-size="7.5" text-anchor="middle">Doctor Slot Booking</text>
+
+            <line x1="582" y1="56" x2="600" y2="56" stroke="#0d9488" stroke-width="2" marker-end="url(#arrow)"></line>
+
+            <!-- Stage 5 -->
+            <rect x="602" y="16" width="114" height="80" rx="5" fill="#0f172a"></rect>
+            <text x="659" y="36" fill="#ffffff" font-size="9.5" font-weight="bold" text-anchor="middle">5. Closed-Won (#3)</text>
+            <text x="659" y="52" fill="#2dd4bf" font-size="8" font-weight="bold" text-anchor="middle">HubSpot Customer</text>
+            <text x="659" y="66" fill="#cbd5e1" font-size="7.5" text-anchor="middle">Deal: Closed Won</text>
+            <text x="659" y="80" fill="#94a3b8" font-size="7.5" text-anchor="middle">Slack Clinic Alert</text>
+          </svg>
+          <figcaption class="diagram-caption">Figure 1.1: Complete 5-Stage Lifecycle from Anonymized Lead Capture to Closed-Won Active Telehealth Patient</figcaption>
+        </figure>
+
+        <h2><span>3. Complete Technology Stack ($0 Portfolio Cost Architecture)</span> <span class="sec-tag">SEC-03</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 17%;">Stack Layer</th>
+              <th scope="col" style="width: 29%;">Technologies &amp; Libraries</th>
+              <th scope="col" style="width: 42%;">Core Engineering Responsibility</th>
+              <th scope="col" style="width: 12%;">Cost Tier</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Frontend UI</strong></td>
+              <td>Next.js 15 (App Router), TypeScript, Tailwind CSS, shadcn/ui</td>
+              <td>Patient Intake Portal, Clinician HITL Vault, 3-Step Onboarding Portal, and live &#34;Developer X-Ray&#34; split-screen telemetry inspector.</td>
+              <td><code>$0 (OSS)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Backend Gateway</strong></td>
+              <td>Next.js Server Actions &amp; Route Handlers, Zod</td>
+              <td>Schema validation, deterministic PII scrubbing, envelope encryption, mock insurance eligibility API, and signed webhook dispatch.</td>
+              <td><code>$0 (OSS)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Database &amp; ORM</strong></td>
+              <td>PostgreSQL 16 (Docker) + Prisma / Drizzle ORM</td>
+              <td>Stores AES-256 encrypted <code>PatientVault</code> rows, append-only <code>AuditLog</code> records, <code>ConsentRecord</code> proofs, and <code>WebhookIdempotency</code> keys.</td>
+              <td><code>$0 (Local/VPS)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Security &amp; Auth</strong></td>
+              <td>Native Node <code>crypto</code> + Auth.js v5 (or Clerk)</td>
+              <td><code>AES-256-GCM</code> field encryption, <code>HMAC-SHA256</code> webhook signing, <code>SHA-256</code> email/token hashing, and RBAC clinician sessions.</td>
+              <td><code>$0 (Free Tier)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Orchestration</strong></td>
+              <td>Self-Hosted n8n (Docker Compose)</td>
+              <td>Stateless webhook routing, AI Agent execution, tool calling, HubSpot CRM pipeline updates, and Dead-Letter Queue error handling.</td>
+              <td><code>$0 (Self-Host)</code></td>
+            </tr>
+            <tr>
+              <td><strong>AI &amp; LLM Layer</strong></td>
+              <td>n8n AI Agent + OpenAI <code>gpt-4o-mini</code> / Claude Haiku</td>
+              <td>Anonymized symptom triage, Structured Output Parser (strict JSON schema), and HTTP tool invocation against payer rules.</td>
+              <td><code>~$0.01 / 50 runs</code></td>
+            </tr>
+            <tr>
+              <td><strong>CRM &amp; Comms</strong></td>
+              <td>HubSpot Dev Sandbox (v3 API), Resend, Slack Webhook</td>
+              <td>Manages Contacts, Deals, custom Triage Pipeline stages, Vault pointer links, HIPAA-safe magic link emails, and clinic Slack alerts.</td>
+              <td><code>$0 (Sandbox)</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 1 of 6</span>
+      </footer>
+    </section>
+
+    <!-- page 2 budget (Compact): h2 11 + h3 8 + list 70 + code-block (24+40) 64 + h3 8 + list 85 + code-block (24+42) 66 + h3 8 + list 95 + 7 gaps 56 = 471 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+
+        <h2><span>4. Functional Requirements: Modules 1 to 3 (Intake to HITL Approval)</span> <span class="sec-tag">SEC-04</span></h2>
+
+        <h3>Module 1: Patient Lead Generation &amp; Compliant Intake (<code>/intake</code>)</h3>
+        <ul class="req-list">
+          <li><span class="req-id">[FR-1.1] Multi-Part Intake Capture:</span> Captures Patient Demographics (Full Name, Email, Phone, DOB), Insurance Info (Payer Name, Member ID, Group Number), Clinical Symptoms (free text), and explicit checkboxes for <strong>HIPAA Authorization</strong> and <strong>TCPA SMS Opt-In</strong>.</li>
+          <li><span class="req-id">[FR-1.2] Legal Consent &amp; Audit Persistence:</span> Server Action validates input via Zod, records client IP, User-Agent, UTC timestamp, and policy version in <code>ConsentRecord</code>, and writes an immutable <code>AuditLog</code> (<code>ACTION: INTAKE_SUBMITTED</code>).</li>
+          <li><span class="req-id">[FR-1.3] Envelope Encryption &amp; Deterministic Scrubbing:</span> Raw PII and clinical notes are encrypted with <code>AES-256-GCM</code> before saving to <code>PatientVault</code>. The server then runs <code>scrubSymptoms()</code> to replace names, dates, phones, emails, and SSNs with anonymized tokens before firing n8n Workflow #1:</li>
+        </ul>
+
+        <div class="code-block">// POST https://n8n.internal/webhook/aegis-triage (Headers: x-aegis-signature, x-aegis-timestamp)
+{
+  &#34;idempotency_key&#34;: &#34;intake_99481a7b-3c2d-4e9f-8a1b&#34;,
+  &#34;patient_uuid&#34;: &#34;99481a7b-3c2d-4e9f-8a1b-772190c8e112&#34;,
+  &#34;lead_contact&#34;: { &#34;first_name&#34;: &#34;Jane&#34;, &#34;email&#34;: &#34;jane.doe@example.com&#34;, &#34;phone&#34;: &#34;+15550192831&#34; },
+  &#34;insurance_provider&#34;: &#34;Aetna_PPO&#34;,
+  &#34;scrubbed_symptoms&#34;: &#34;Patient [REDACTED_NAME] (DOB: [REDACTED_DATE]) reports 4 days of chest tightness...&#34;,
+  &#34;vault_review_url&#34;: &#34;https://aegisflow.demo/admin/vault/99481a7b-3c2d-4e9f-8a1b-772190c8e112&#34;
+}</div>
+
+        <h3>Module 2: Stateless AI Triage &amp; HubSpot CRM Sync (n8n Workflow #1)</h3>
+        <ul class="req-list">
+          <li><span class="req-id">[FR-2.1] Cryptographic Verification &amp; Idempotency:</span> n8n verifies the <code>HMAC-SHA256</code> signature and checks <code>idempotency_key</code> against Next.js to prevent duplicate execution on webhook retries.</li>
+          <li><span class="req-id">[FR-2.2] AI Triage Agent with Tool Calling:</span> The n8n AI Agent analyzes <code>scrubbed_symptoms</code> and invokes two bound HTTP tools: (1) <code>check_insurance_eligibility</code> (queries Next.js mock payer endpoint) and (2) <code>fetch_clinical_routing_rules</code> (maps symptoms to specialist tracks).</li>
+          <li><span class="req-id">[FR-2.3] Structured Output Enforcement:</span> The Agent enforces a strict JSON Schema Output Parser before updating HubSpot and calling back to Next.js (<code>POST /api/webhooks/n8n-triage-callback</code>):</li>
+        </ul>
+
+        <div class="code-block">{
+  &#34;urgency_level&#34;: &#34;HIGH&#34;,
+  &#34;recommended_specialty&#34;: &#34;Cardiology&#34;,
+  &#34;triage_rationale_redacted&#34;: &#34;Acute chest tightness lasting &gt;72h warrants priority cardiac evaluation.&#34;,
+  &#34;insurance_verified&#34;: true,
+  &#34;copay_estimate_usd&#34;: 35,
+  &#34;suggested_onboarding_track&#34;: &#34;FastTrack&#34;
+}</div>
+
+        <ul class="req-list">
+          <li><span class="req-id">[FR-2.4] Zero-PHI HubSpot Pipeline Sync:</span> n8n upserts the HubSpot Contact (<code>lifecyclestage = lead</code>) and creates a Deal in the <strong>&#34;Patient Intake Pipeline&#34;</strong> (Stage: <code>AI Triaged - Pending Clinician Review</code>) populated strictly with non-clinical metadata and the <code>vault_review_url</code> pointer.</li>
+        </ul>
+
+        <h3>Module 3: Clinician HITL Vault &amp; Magic Link Dispatch (<code>/admin/vault/[id]</code> ↔ n8n #2)</h3>
+        <ul class="req-list">
+          <li><span class="req-id">[FR-3.1] RBAC Authentication &amp; Audited Decryption:</span> When a clinician clicks <code>vault_review_url</code> inside HubSpot, Next.js verifies their staff session, inserts an append-only <code>AuditLog</code> row (<code>ACTION: PHI_DECRYPTED_VIEW</code>), and decrypts the raw clinical notes and AI triage card on the server.</li>
+          <li><span class="req-id">[FR-3.2] One-Click Approval &amp; Token Generation:</span> Clicking <strong>&#34;Approve &amp; Start Onboarding&#34;</strong> generates a cryptographically random one-time onboarding token (hashed via <code>SHA-256</code> in Postgres with a 48-hour expiry) and triggers <strong>n8n Workflow #2</strong>.</li>
+          <li><span class="req-id">[FR-3.3] HIPAA-Safe Multi-Channel Notification:</span> n8n advances the HubSpot Deal stage to <code>Approved - Onboarding Sent</code> and sends an email/SMS via Resend containing zero medical info—only the secure magic link: <code>https://aegisflow.demo/onboarding/{raw_token}</code>.</li>
+        </ul>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 2 of 6</span>
+      </footer>
+    </section>
+
+    <!-- page 3 budget (Compact): h2 11 + h3 8 + list 105 + h3 8 + panel (24+55) 79 + h2 11 + callout-split 95 + table 6 rows 115 + 7 gaps 56 = 488 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+
+        <h2><span>5. Functional Requirements: Modules 4 &amp; 5 (Closed-Loop Onboarding)</span> <span class="sec-tag">SEC-05</span></h2>
+
+        <h3>Module 4: 3-Step Patient Onboarding Portal (<code>/onboarding/[token]</code> ↔ n8n Workflow #3)</h3>
+        <ul class="req-list">
+          <li><span class="req-id">[FR-4.1] Single-Use Token Validation:</span> Navigating to <code>/onboarding/[token]</code> hashes the URL token with <code>SHA-256</code> and verifies that the token exists in <code>PatientVault</code>, is unexpired (<code>&lt; 48h</code>), and has status <code>APPROVED</code>.</li>
+          <li><span class="req-id">[FR-4.2] Step 1 — KYC Identity &amp; Insurance Card Confirmation:</span> Patient uploads a photo ID and insurance card (includes a <em>&#34;Populate Demo Insurance Card&#34;</em> button for recruiters). Next.js encrypts the document metadata and logs <code>ACTION: KYC_VERIFIED</code>.</li>
+          <li><span class="req-id">[FR-4.3] Step 2 — Telehealth Informed Consent &amp; NPP E-Signature:</span> Captures the patient&#39;s typed legal signature acknowledging the <strong>Notice of Privacy Practices (NPP)</strong> and Consent to Telehealth Treatment, storing the signature hash and IP in <code>ConsentRecord</code>.</li>
+          <li><span class="req-id">[FR-4.4] Step 3 — Specialist Slot Booking &amp; Final Webhook:</span> Displays available time slots for the approved specialty (e.g., Cardiology). Clicking <strong>&#34;Confirm Appointment&#34;</strong> updates <code>PatientVault.status = ONBOARDED</code> and triggers <strong>n8n Workflow #3</strong>.</li>
+          <li><span class="req-id">[FR-4.5] HubSpot Closed-Won &amp; Customer Lifecycle Upgrade:</span> n8n Workflow #3 transitions the HubSpot Deal stage to <strong><code>Closed Won - Appointment Booked</code></strong>, upgrades the HubSpot Contact <code>lifecyclestage</code> from <code>lead</code> to <strong><code>customer</code></strong>, writes the <code>appointment_datetime</code> property, and posts a confirmation alert to the clinic&#39;s Slack/Discord channel.</li>
+        </ul>
+
+        <h3>Module 5: &#34;Developer X-Ray Mode&#34; Live Telemetry UI (Portfolio Showcase Feature)</h3>
+        <div class="panel teal">
+          <div class="panel-title">[FR-5.1] Real-Time 4-Stage Split-Screen Inspector</div>
+          <p>Accessible via a persistent header toggle so technical interviewers can inspect the full backend pipeline without leaving the browser. Submitting an intake or completing onboarding updates four live telemetry cards in real time via Server-Sent Events / polling: <strong>(1) Raw Browser Payload</strong> (highlights detected PII/PHI tokens in red), <strong>(2) PostgreSQL Vault Row</strong> (displays live <code>AES-256-GCM</code> ciphertext and the append-only <code>AuditLog</code> stream), <strong>(3) Scrubbed n8n Webhook Inspector</strong> (displays the exact JSON &amp; HMAC signature sent to n8n), and <strong>(4) AI Agent &amp; HubSpot Deal State</strong> (shows structured triage JSON and live CRM stage transitions).</p>
+        </div>
+
+        <h2><span>6. Lightweight Security Core (~150 LOC Specification)</span> <span class="sec-tag">SEC-06</span></h2>
+        <div class="callout-split">
+          <div class="panel">
+            <div class="panel-title">1. Field Encryption (<code>src/lib/crypto.ts</code>)</div>
+            <p>Uses native Node.js <code>crypto</code> with <code>aes-256-gcm</code>. Every encrypted field generates a fresh 12-byte random IV and 16-byte authentication tag, stored in canonical format: <code>v1:{iv_hex}:{authTag_hex}:{ciphertext_hex}</code>.</p>
+          </div>
+          <div class="panel">
+            <div class="panel-title">2. Webhook Signing (<code>src/lib/hmac.ts</code>)</div>
+            <p>Signs all Next.js ↔ n8n payloads using <code>HMAC-SHA256(secret, `${timestamp}.${rawBody}`)</code>. Requests with a timestamp drift exceeding <code>±300 seconds</code> are rejected to prevent replay attacks.</p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 16%;">Scrubber Pass</th>
+              <th scope="col" style="width: 26%;">Target PII / PHI Entity</th>
+              <th scope="col" style="width: 34%;">Detection Pattern / Logic (<code>scrubber.ts</code>)</th>
+              <th scope="col" style="width: 24%;">Replacement Token</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Pass 1 (Exact)</strong></td>
+              <td>Patient Full / First / Last Name</td>
+              <td>Case-insensitive boundary match against submitted form name fields</td>
+              <td><code>[REDACTED_NAME]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Pass 2 (Regex)</strong></td>
+              <td>US Social Security Number</td>
+              <td><code>\b\d{3}[-.\s]?\d{2}[-.\s]?\d{4}\b</code></td>
+              <td><code>[REDACTED_SSN]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Pass 3 (Regex)</strong></td>
+              <td>Phone Numbers (US/Intl)</td>
+              <td><code>(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b</code></td>
+              <td><code>[REDACTED_PHONE]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Pass 4 (Regex)</strong></td>
+              <td>Email Addresses</td>
+              <td><code>[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}</code></td>
+              <td><code>[REDACTED_EMAIL]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Pass 5 (Regex)</strong></td>
+              <td>Dates &amp; Date of Birth</td>
+              <td><code>\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}-\d{2}-\d{2})\b</code></td>
+              <td><code>[REDACTED_DATE]</code></td>
+            </tr>
+            <tr>
+              <td><strong>Pass 6 (Regex)</strong></td>
+              <td>Insurance Member IDs</td>
+              <td>Exact match on submitted Member ID + <code>\b[A-Z]{3}\d{6,10}\b</code></td>
+              <td><code>[REDACTED_MEMBER_ID]</code></td>
+            </tr>
+          </tbody>
+        </table>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 3 of 6</span>
+      </footer>
+    </section>
+
+    <!-- page 4 budget (Compact): h2 11 + table 7 rows 135 + h2 11 + 2x2 grid 152 + h2 11 + panel (24+65) 89 + 6 gaps 48 = 457 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+
+        <h2><span>7. Node-by-Node n8n Workflow Blueprints (Git-Tracked JSONs)</span> <span class="sec-tag">SEC-07</span></h2>
+        <p>All four n8n workflows are exported as declarative JSON files inside <code>/n8n/workflows/</code> so code reviewers can inspect orchestration logic alongside the Next.js codebase.</p>
+
+        <h3>7.1 Primary Triage &amp; Lead Routing Workflow (<code>triage-agent.json</code>)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 14%;">Node Order</th>
+              <th scope="col" style="width: 24%;">n8n Node Type</th>
+              <th scope="col" style="width: 62%;">Execution Logic &amp; Configuration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Node 01</strong></td>
+              <td><code>Webhook (POST)</code></td>
+              <td>Listens on <code>/webhook/aegis-triage</code>. Passes raw body and <code>x-aegis-signature</code> / <code>x-aegis-timestamp</code> headers to Node 02.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 02</strong></td>
+              <td><code>Code (TypeScript)</code></td>
+              <td>Computes <code>HMAC-SHA256</code> using <code>$env.AEGIS_WEBHOOK_SECRET</code>. Throws <code>401 Unauthorized</code> if signature mismatches or timestamp is stale.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 03</strong></td>
+              <td><code>AI Agent (Tools Agent)</code></td>
+              <td>Connected to <strong>OpenAI Chat Model (<code>gpt-4o-mini</code>)</strong> + <strong>Structured Output Parser</strong>. Evaluates <code>scrubbed_symptoms</code> with zero-PII system prompt.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 04a/b</strong></td>
+              <td><code>HTTP Request Tool</code></td>
+              <td>Bound tools invoked dynamically by Node 03: queries <code>GET /api/mock/insurance?payer=...</code> and <code>GET /api/mock/routing-rules</code> on Next.js server.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 05</strong></td>
+              <td><code>HubSpot (Contact)</code></td>
+              <td>Upserts Contact via email; sets <code>lifecyclestage = lead</code>, <code>aegis_patient_uuid</code>, and <code>hipaa_consent_verified = true</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 06</strong></td>
+              <td><code>HubSpot (Deal)</code></td>
+              <td>Creates Deal associated with Contact in <em>Patient Intake Pipeline</em>; sets stage <code>AI Triaged</code>, <code>ai_urgency</code>, and <code>vault_review_url</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Node 07</strong></td>
+              <td><code>HTTP Request (POST)</code></td>
+              <td>Signs and dispatches AI triage JSON + <code>hubspotContactId</code> + <code>hubspotDealId</code> back to Next.js <code>/api/webhooks/n8n-triage-callback</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2><span>7.2 Secondary &amp; Reliability Workflows</span> <span class="sec-tag">SEC-07.2</span></h2>
+        <div class="card-grid-2x2">
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Workflow #2: HITL Approval Dispatch</span>
+              <span class="badge-outline">onboarding-dispatch.json</span>
+            </div>
+            <p><strong>Trigger:</strong> Clinician clicks Approve in Vault.<br><strong>Nodes:</strong> Webhook → HMAC Verify → HubSpot Deal Update (<code>Stage: Approved - Onboarding Sent</code>) → Resend Email API (sends HIPAA-safe magic link <code>/onboarding/{token}</code>) → Next.js Audit Callback.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Workflow #3: Onboarding Completion</span>
+              <span class="badge-outline">onboarding-complete.json</span>
+            </div>
+            <p><strong>Trigger:</strong> Patient completes 3-step onboarding.<br><strong>Nodes:</strong> Webhook → HMAC Verify → HubSpot Deal Update (<code>Stage: Closed Won</code>) → HubSpot Contact Update (<code>lifecyclestage: customer</code>) → Slack Clinic Notification.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Workflow #4: Dead-Letter Error Handler</span>
+              <span class="badge-outline">error-dlq.json</span>
+            </div>
+            <p><strong>Trigger:</strong> Global n8n <code>Error Trigger</code> node.<br><strong>Nodes:</strong> Captures failed workflow ID, node name, and error message (stripping payload bodies) → Posts alert to Slack Ops channel → Calls Next.js <code>/api/webhooks/n8n-error</code>.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Retry &amp; Backoff Policy</span>
+              <span class="badge-outline">Resilience Config</span>
+            </div>
+            <p>All external HTTP and HubSpot nodes in n8n are configured with <code>Retry On Fail = true</code> (Max 3 tries, 2000ms exponential wait) paired with <code>WebhookIdempotency</code> keys to guarantee at-least-once delivery without duplicates.</p>
+          </div>
+        </div>
+
+        <h2><span>8. HubSpot CRM Custom Property &amp; Pipeline Specification</span> <span class="sec-tag">SEC-08</span></h2>
+        <div class="panel">
+          <div class="panel-title">Patient Intake Pipeline Stages &amp; Custom CRM Properties (Zero-PHI Policy)</div>
+          <p><strong>Deal Pipeline Stages:</strong> <code>1. AI Triaged - Pending Review</code> → <code>2. Approved - Onboarding Sent</code> → <code>3. Closed Won - Appointment Booked</code> (or <code>4. Closed Lost - Referred Out</code>).<br><strong>Custom Deal Properties:</strong> <code>aegis_patient_uuid</code> (Single-line text), <code>vault_review_url</code> (URL pointer to Next.js Vault), <code>ai_urgency_level</code> (Enumeration: <code>LOW</code>, <code>MEDIUM</code>, <code>HIGH</code>, <code>CRITICAL</code>), <code>recommended_specialty</code> (Text), <code>onboarding_track</code> (Text), <code>appointment_datetime</code> (DateTime).</p>
+        </div>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 4 of 6</span>
+      </footer>
+    </section>
+
+    <!-- page 5 budget (Compact): h2 11 + table 4 rows 85 + code-block (24+52) 76 + h2 11 + table 6 rows 115 + h2 11 + panel (24+55) 79 + 6 gaps 48 = 436 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+
+        <h2><span>9. PostgreSQL Database Schema &amp; Immutability Trigger</span> <span class="sec-tag">SEC-09</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 20%;">Table Name</th>
+              <th scope="col" style="width: 45%;">Columns &amp; Data Types</th>
+              <th scope="col" style="width: 35%;">Security &amp; Compliance Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>PatientVault</code></td>
+              <td><code>id</code> (UUID PK), <code>emailHash</code> (String Unique), <code>encryptedPiiJson</code> (Text), <code>encryptedSymptoms</code> (Text), <code>scrubbedSymptoms</code> (Text), <code>aiTriageJson</code> (JSONB), <code>onboardingTokenHash</code> (String), <code>tokenExpiresAt</code> (Timestamp), <code>appointmentSlot</code> (Timestamp), <code>status</code> (Enum), <code>hubspotContactId</code>, <code>hubspotDealId</code></td>
+              <td>Stores all PHI encrypted at rest via <code>AES-256-GCM</code>. Uses <code>emailHash</code> and <code>onboardingTokenHash</code> (<code>SHA-256</code>) for zero-plaintext lookups.</td>
+            </tr>
+            <tr>
+              <td><code>ConsentRecord</code></td>
+              <td><code>id</code> (UUID PK), <code>patientId</code> (FK), <code>consentType</code> (Enum: <code>HIPAA_INTAKE</code>, <code>TCPA_SMS</code>, <code>TELEHEALTH_NPP</code>), <code>signatureText</code> (String), <code>ipAddress</code> (String), <code>userAgent</code> (String), <code>policyVersion</code> (String), <code>createdAt</code></td>
+              <td>Provides non-repudiable legal proof of TCPA SMS opt-in and Telehealth NPP e-signature prior to communications or booking.</td>
+            </tr>
+            <tr>
+              <td><code>AuditLog</code></td>
+              <td><code>id</code> (UUID PK), <code>actorId</code> (String), <code>actorRole</code> (Enum: <code>PATIENT</code>, <code>N8N_SYSTEM</code>, <code>CLINICIAN</code>), <code>patientId</code> (FK), <code>action</code> (Enum), <code>metadata</code> (JSONB), <code>ipAddress</code> (String), <code>createdAt</code></td>
+              <td>Protected by PostgreSQL trigger preventing <code>UPDATE</code> or <code>DELETE</code>. Logs every creation, scrub, AI triage, decryption view, and approval.</td>
+            </tr>
+            <tr>
+              <td><code>WebhookIdempotency</code></td>
+              <td><code>key</code> (String PK), <code>workflowName</code> (String), <code>status</code> (Enum: <code>PROCESSING</code>, <code>COMPLETED</code>, <code>FAILED</code>), <code>processedAt</code> (Timestamp)</td>
+              <td>Guarantees idempotent webhook execution across Next.js and n8n retries.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="code-block">-- PostgreSQL Migration: Enforce Append-Only Immutability on HIPAA AuditLog Table
+CREATE OR REPLACE FUNCTION prevent_audit_log_modification() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION &#39;HIPAA Compliance Violation: AuditLog table is strictly append-only. UPDATE and DELETE are prohibited.&#39;;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_audit_log_immutable
+BEFORE UPDATE OR DELETE ON &#34;AuditLog&#34; FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_modification();</div>
+
+        <h2><span>10. API Endpoint &amp; Webhook Contract Inventory</span> <span class="sec-tag">SEC-10</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 14%;">Method</th>
+              <th scope="col" style="width: 34%;">Route / Endpoint</th>
+              <th scope="col" style="width: 20%;">Auth Mechanism</th>
+              <th scope="col" style="width: 32%;">Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/intake</code> (or Server Action)</td>
+              <td>Public + CSRF + Rate Limit</td>
+              <td>Validates intake, logs consent, encrypts PHI, scrubs PII, fires n8n #1.</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/mock/insurance</code></td>
+              <td><code>x-aegis-tool-key</code></td>
+              <td>Called by n8n AI Agent Tool to verify payer coverage &amp; copay.</td>
+            </tr>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/webhooks/n8n-triage-callback</code></td>
+              <td><code>x-aegis-signature</code> (HMAC)</td>
+              <td>Receives structured AI triage JSON and HubSpot IDs from n8n #1.</td>
+            </tr>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/vault/[id]/approve</code></td>
+              <td>Clinician RBAC Session</td>
+              <td>Generates 48h onboarding token, logs approval, fires n8n #2.</td>
+            </tr>
+            <tr>
+              <td><code>POST</code></td>
+              <td><code>/api/onboarding/[token]/complete</code></td>
+              <td>SHA-256 Single-Use Token</td>
+              <td>Saves KYC + NPP e-sign + slot booking, fires n8n #3.</td>
+            </tr>
+            <tr>
+              <td><code>GET</code></td>
+              <td><code>/api/xray/[patientId]</code></td>
+              <td>Demo Inspector Toggle</td>
+              <td>Returns live 4-stage telemetry snapshot for the X-Ray UI split screen.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2><span>11. Security Threat Model (STRIDE Mitigation Matrix)</span> <span class="sec-tag">SEC-11</span></h2>
+        <div class="panel">
+          <div class="panel-title">Enterprise Threat Mitigations Built Into Architecture</div>
+          <p><strong>1. Prompt Injection &amp; PII Leakage to LLMs:</strong> Mitigated by running deterministic regex redaction (<code>scrubber.ts</code>) on the Next.js server <em>before</em> n8n or OpenAI receives the text, plus enforcing a strict JSON Schema Output Parser.<br><strong>2. Webhook Spoofing &amp; Replay Attacks:</strong> Mitigated via bidirectional <code>HMAC-SHA256</code> signature headers bound to a 300-second timestamp window and tracked in <code>WebhookIdempotency</code>.<br><strong>3. Third-Party CRM &amp; Log Honeypots:</strong> Mitigated by withholding clinical PHI from HubSpot (storing only <code>vault_review_url</code>) and configuring Dockerized n8n with <code>EXECUTIONS_DATA_SAVE_ON_SUCCESS=none</code>.</p>
+        </div>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 5 of 6</span>
+      </footer>
+    </section>
+
+    <!-- page 6 budget (Compact): h2 11 + callout-split (code + env) 130 + h2 11 + table 5 rows 100 + h2 11 + 2x2 grid 152 + 6 gaps 48 = 463 / 600 words -->
+    <section class="page compact">
+      <div class="page-content">
+
+        <h2><span>12. Monorepo Structure &amp; Environment Configuration</span> <span class="sec-tag">SEC-12</span></h2>
+        <div class="callout-split">
+          <div class="code-block">aegisflow/
+├── docker-compose.yml       # Postgres 16 + Self-Hosted n8n
+├── .env.example             # Documented security keys
+├── prisma/
+│   ├── schema.prisma        # Vault, Consent, Audit tables
+│   └── migrations/          # Includes immutable Audit trigger
+├── n8n/
+│   └── workflows/           # Git-tracked n8n JSON exports
+│       ├── triage-agent.json
+│       ├── onboarding-dispatch.json
+│       ├── onboarding-complete.json
+│       └── error-dlq.json
+└── src/
+    ├── app/
+    │   ├── intake/          # Module 1 + X-Ray Split UI
+    │   ├── admin/vault/[id] # Module 3 Clinician HITL UI
+    │   ├── onboarding/[tok] # Module 4 3-Step Patient Portal
+    │   └── api/             # Signed Webhooks &amp; Mock Tools
+    └── lib/
+        ├── crypto.ts        # AES-256-GCM encrypt/decrypt
+        ├── hmac.ts          # Webhook signer &amp; verifier
+        ├── scrubber.ts      # 6-pass deterministic redaction
+        └── audit.ts         # Append-only AuditLog helper</div>
+          <div class="code-block"># --- Next.js Security &amp; Database (.env) ---
+DATABASE_URL=&#34;postgresql://aegis:pass@localhost:5432/aegis&#34;
+PHI_ENCRYPTION_KEY=&#34;64-char-hex-32-byte-aes-256-master-key&#34;
+AEGIS_WEBHOOK_SECRET=&#34;shared-hmac-sha256-signing-secret&#34;
+AEGIS_TOOL_API_KEY=&#34;internal-n8n-tool-auth-token&#34;
+NEXTAUTH_SECRET=&#34;clinician-rbac-session-secret&#34;
+
+# --- Self-Hosted n8n Docker Config ---
+N8N_ENCRYPTION_KEY=&#34;strict-n8n-credential-encryption-key&#34;
+EXECUTIONS_DATA_SAVE_ON_SUCCESS=&#34;none&#34;
+EXECUTIONS_DATA_SAVE_ON_ERROR=&#34;all&#34;
+EXECUTIONS_DATA_PRUNE=&#34;true&#34;
+EXECUTIONS_DATA_MAX_AGE=&#34;24&#34;
+
+# --- External Integrations ---
+OPENAI_API_KEY=&#34;sk-proj-...&#34;
+HUBSPOT_PRIVATE_APP_TOKEN=&#34;pat-na1-...&#34;
+RESEND_API_KEY=&#34;re_...&#34;
+SLACK_CLINIC_WEBHOOK_URL=&#34;https://hooks.slack.com/...&#34;</div>
+        </div>
+
+        <h2><span>13. 14-Day Engineering Sprint Roadmap</span> <span class="sec-tag">SEC-13</span></h2>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col" style="width: 18%;">Sprint Phase</th>
+              <th scope="col" style="width: 13%;">Timeline</th>
+              <th scope="col" style="width: 69%;">Milestones &amp; Verification Deliverable</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Phase 1: Core Security</strong></td>
+              <td>Days 1 – 3</td>
+              <td>Boot Docker Compose (Postgres + n8n). Implement Prisma schema, <code>AuditLog</code> immutability trigger, <code>crypto.ts</code>, <code>hmac.ts</code>, and <code>scrubber.ts</code> with Vitest unit tests.</td>
+            </tr>
+            <tr>
+              <td><strong>Phase 2: Intake &amp; AI (#1)</strong></td>
+              <td>Days 4 – 6</td>
+              <td>Build <code>/intake</code> UI + Mock Insurance API. Build <strong>n8n Workflow #1</strong> (HMAC check, AI Triage Agent + Tools, HubSpot Contact/Deal creation, Next.js callback).</td>
+            </tr>
+            <tr>
+              <td><strong>Phase 3: HITL Vault (#2)</strong></td>
+              <td>Days 7 – 9</td>
+              <td>Build <code>/admin/vault/[id]</code> with RBAC, audited decryption, and 48h token generator. Build <strong>n8n Workflow #2</strong> (HubSpot stage update + Resend magic link email).</td>
+            </tr>
+            <tr>
+              <td><strong>Phase 4: Onboarding (#3)</strong></td>
+              <td>Days 10 – 12</td>
+              <td>Build 3-step <code>/onboarding/[token]</code> portal (KYC card, Telehealth NPP e-sign, slot booking). Build <strong>n8n Workflow #3</strong> (Deal → <code>Closed Won</code>, Contact → <code>Customer</code>, Slack alert).</td>
+            </tr>
+            <tr>
+              <td><strong>Phase 5: X-Ray &amp; Polish</strong></td>
+              <td>Days 13 – 14</td>
+              <td>Build split-screen &#34;Developer X-Ray&#34; telemetry UI, configure <strong>n8n Workflow #4</strong> (Error DLQ), export JSON workflows to <code>/n8n/workflows/</code>, and record portfolio walkthrough.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2><span>14. Acceptance Criteria &amp; Automated Verification Suite</span> <span class="sec-tag">SEC-14</span></h2>
+        <div class="card-grid-2x2">
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Gate 1: Zero-PII Leak Unit Test</span>
+              <span class="badge-outline">Vitest Suite</span>
+            </div>
+            <p>Automated test passes 25 synthetic clinical paragraphs containing names, SSNs, phones, emails, and DOBs through <code>scrubSymptoms()</code> and asserts <code>0%</code> raw token survival.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Gate 2: Cryptographic Tamper Test</span>
+              <span class="badge-outline">Security Test</span>
+            </div>
+            <p>Verifies that modifying 1 byte of an <code>AES-256-GCM</code> ciphertext throws an authentication tag error, and sending an unsigned or stale webhook to n8n returns HTTP <code>401</code>.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Gate 3: Audit Immutability Check</span>
+              <span class="badge-outline">DB Trigger Test</span>
+            </div>
+            <p>Executes <code>DELETE FROM &#34;AuditLog&#34;</code> and <code>UPDATE &#34;AuditLog&#34;</code> in integration tests and asserts PostgreSQL raises the custom HIPAA compliance exception.</p>
+          </div>
+          <div class="spec-card">
+            <div class="spec-card-header">
+              <span class="spec-card-title">Gate 4: Closed-Loop E2E Lifecycle</span>
+              <span class="badge-outline">Playwright E2E</span>
+            </div>
+            <p>Completes intake → AI triage → Clinician approval → Patient onboarding and verifies HubSpot Deal equals <code>Closed Won</code> and Contact equals <code>customer</code>.</p>
+          </div>
+        </div>
+
+      </div>
+      <footer class="page-footer">
+        <span>AegisFlow — Master Product Requirements Document (HIPAA AI &amp; HubSpot Architecture)</span>
+        <span>Page 6 of 6</span>
+      </footer>
+    </section>
+
+  </div>
+
+<script data-bard-injected="true">
+(function() {
+  async function fetchFifeImageBlobUsingAlr(urlString) {
+    if (urlString.startsWith('blob:') || urlString.startsWith('data:')) {
+      throw new Error('Input URL is already a blob or data URL.');
+    }
+    var url = new URL(urlString, window.location.href);
+    url.searchParams.set('alr', 'yes');
+    for (var i = 0; i < 5; i++) {
+      var response = await fetch(url.toString(), {credentials: 'include'});
+      if (!response.ok) {
+        throw new Error('Fetch received not OK response: ' + response.status);
+      }
+      var contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.startsWith('text/plain')) {
+        var blob = await response.blob();
+        if (blob.size > 0 && blob.type.startsWith('image/')) {
+          return blob;
+        }
+        throw new Error('Fetched blob is not a valid image.');
+      }
+      url = new URL(await response.text());
+    }
+    throw new Error('Exceeded maximum number of redirects.');
+  }
+
+  async function updateImageSourcesUsingAlr() {
+    var imgs = Array.from(document.querySelectorAll('img'));
+    await Promise.all(imgs.map(async function(img) {
+      if (img.src && img.src.includes('googleusercontent')) {
+        try {
+          var blob = await fetchFifeImageBlobUsingAlr(img.src);
+          img.src = URL.createObjectURL(blob);
+        } catch (e) {}
+      }
+    }));
+
+    var elements = document.querySelectorAll('[style*="googleusercontent"]');
+    var urlRegex = /url\((['"]?)(https?:\/\/.*?googleusercontent.*?)\1\)/;
+    await Promise.all(Array.from(elements).map(async function(el) {
+      var bg = el.style.backgroundImage;
+      var match = bg ? bg.match(urlRegex) : null;
+      if (match && match[2]) {
+        try {
+          var blob = await fetchFifeImageBlobUsingAlr(match[2]);
+          var blobUrl = URL.createObjectURL(blob);
+          el.style.backgroundImage = bg.replace(match[2], blobUrl);
+        } catch (e) {}
+      }
+    }));
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateImageSourcesUsingAlr);
+  } else {
+    updateImageSourcesUsingAlr();
+  }
+})();
+</script></body></html>
