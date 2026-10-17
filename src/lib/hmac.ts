@@ -1,11 +1,12 @@
 import crypto from "crypto";
+import { requiredSecret } from "./config";
 
 const DEFAULT_WEBHOOK_SECRET = "aegis-dev-hmac-webhook-secret-key-2026";
 const MAX_TIMESTAMP_DRIFT_SECONDS = 300; // ±5 minutes replay window
 
 function getWebhookSecret(overrideSecret?: string): string {
   return (
-    overrideSecret ?? process.env.AEGIS_WEBHOOK_SECRET ?? DEFAULT_WEBHOOK_SECRET
+    overrideSecret ?? requiredSecret("AEGIS_WEBHOOK_SECRET", DEFAULT_WEBHOOK_SECRET)
   );
 }
 
@@ -53,7 +54,7 @@ export function verifyWebhookSignature(
   }
 
   const timestampSeconds = Number(timestampHeader);
-  if (!Number.isFinite(timestampSeconds)) {
+  if (!/^\d+$/.test(timestampHeader) || !Number.isSafeInteger(timestampSeconds) || !/^[a-f0-9]{64}$/i.test(signatureHeader)) {
     return { valid: false, reason: "Invalid timestamp header format" };
   }
 

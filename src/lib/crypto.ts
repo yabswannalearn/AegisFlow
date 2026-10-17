@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { requiredSecret } from "./config";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTE_LENGTH = 12;
@@ -9,7 +10,7 @@ const DEFAULT_DEV_KEY =
 
 function getMasterKey(overrideKeyHex?: string): Buffer {
   const keyHex =
-    overrideKeyHex ?? process.env.PHI_ENCRYPTION_KEY ?? DEFAULT_DEV_KEY;
+    overrideKeyHex ?? requiredSecret("PHI_ENCRYPTION_KEY", DEFAULT_DEV_KEY);
   if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
     throw new Error(
       "Invalid PHI_ENCRYPTION_KEY: expected 64-character hex string (32 bytes)."
@@ -114,6 +115,6 @@ export function generatePseudonymousAlias(patientUuid: string): {
     shortId,
     firstName: `Patient_${shortId}`,
     lastName: "VaultProtected",
-    email: `${shortId}@vault.aegisflow.internal`,
+    email: `${patientUuid.toLowerCase()}@vault.example.com`,
   };
 }

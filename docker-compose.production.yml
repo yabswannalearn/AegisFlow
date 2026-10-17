@@ -1,0 +1,30 @@
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    ports: ["127.0.0.1:3005:3000"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      N8N_TRIAGE_WEBHOOK_URL: http://n8n:5678/webhook/aegis-triage
+      N8N_ONBOARDING_DISPATCH_WEBHOOK_URL: http://n8n:5678/webhook/aegis-onboarding-dispatch
+      N8N_ONBOARDING_COMPLETE_WEBHOOK_URL: http://n8n:5678/webhook/aegis-onboarding-complete
+      AEGIS_OUTBOX_WORKER: "true"
+      AEGIS_ALLOWED_ORIGIN: ${NEXT_PUBLIC_APP_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  migrate:
+    build:
+      context: .
+      target: builder
+    profiles: ["migration"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+  n8n:
+    environment:
+      NEXTJS_INTERNAL_URL: http://app:3000

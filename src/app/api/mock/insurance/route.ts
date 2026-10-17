@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requiredSecret, safeEqual } from "@/lib/config";
 import { evaluateInsuranceEligibility } from "@/lib/vault-store";
 
 export async function GET(request: NextRequest) {
   const expectedKey =
-    process.env.AEGIS_TOOL_API_KEY ?? "aegis-dev-internal-tool-api-key-2026";
+    requiredSecret("AEGIS_TOOL_API_KEY", "aegis-dev-internal-tool-api-key-2026");
   const providedKey = request.headers.get("x-aegis-tool-key");
 
-  if (providedKey && providedKey !== expectedKey) {
+  if (!safeEqual(providedKey, expectedKey)) {
     return NextResponse.json(
       { error: "Unauthorized n8n tool key" },
       { status: 401 }

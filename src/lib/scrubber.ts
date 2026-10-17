@@ -149,7 +149,7 @@ export function scrubSymptoms(
 
   // --- Pass 4: Email Addresses ---
   applyPattern(
-    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+    /(?:[a-zA-Z0-9._%+-]|\[REDACTED_NAME\])+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
     "[REDACTED_EMAIL]",
     "PASS_4_EMAIL"
   );

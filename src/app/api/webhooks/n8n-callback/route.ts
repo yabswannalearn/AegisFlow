@@ -7,7 +7,7 @@ import {
 } from "@/lib/vault-store";
 
 const CallbackPayloadSchema = z.object({
-  patient_uuid: z.string().min(1),
+  patient_uuid: z.string().uuid(),
   status: z
     .enum([
       "AI_TRIAGED",
@@ -54,9 +54,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const updated = applyN8nTriageCallback({
+  const updated = await applyN8nTriageCallback({
     ...parsed.data,
-    execution_mode: "LIVE_N8N_WEBHOOK",
+    execution_mode: "LIVE_GEMINI_N8N",
   });
 
   if (!updated) {

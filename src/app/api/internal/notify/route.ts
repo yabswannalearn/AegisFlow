@@ -1,46 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { verifyWebhookSignature } from "@/lib/hmac";
-import { getVaultRecord } from "@/lib/vault-store";
-import { decryptPhi } from "@/lib/crypto";
-
+import { dispatchBlindNotification } from "@/lib/integrations";
 export async function POST(request: NextRequest) {
-  const rawBody = await request.text();
-  const signature = request.headers.get("x-aegis-signature");
-  const timestamp = request.headers.get("x-aegis-timestamp");
-
-  const verified = verifyWebhookSignature(rawBody, signature, timestamp);
-  if (!verified.valid) {
-    return NextResponse.json(
-      { error: "Unauthorized blind notification request", reason: verified.reason },
-      { status: 401 }
-    );
-  }
-
-  const payload = JSON.parse(rawBody) as {
-    patient_uuid: string;
-    template: string;
-    onboarding_url?: string;
-  };
-
-  const record = getVaultRecord(payload.patient_uuid);
-  if (!record) {
-    return NextResponse.json(
-      { error: "PatientVault record not found" },
-      { status: 404 }
-    );
-  }
-
-  const pii = JSON.parse(decryptPhi(record.encryptedPiiJson)) as {
-    email: string;
-    phone: string;
-  };
-  const maskedEmail = pii.email.replace(/^(..).*(@.*)$/, "$1***$2");
-
-  return NextResponse.json({
-    dispatched: true,
-    zeroPhiExternalLeak: true,
-    recipientMasked: maskedEmail,
-    template: payload.template,
-    dispatchedAt: new Date().toISOString(),
-  });
+  const body = await request.text();
+  if (!verifyWebhookSignature(body, request.headers.get("x-aegis-signature"), request.headers.get("x-aegis-timestamp")).valid) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  try {
+    const input = z.object({ patient_uuid: z.string().uuid() }).parse(JSON.parse(body));
+    return NextResponse.json(await dispatchBlindNotification(input.patient_uuid));
+  } catch { return NextResponse.json({ error: "Notification could not be delivered" }, { status: 503 }); }
 }

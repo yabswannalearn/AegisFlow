@@ -27,14 +27,16 @@ describe("Phase 3: Backend State Machine, Two-Layer Idempotency & Burned Capabil
       policyVersion: "HIPAA-NPP-2026.1",
     };
 
-    const first = await processPatientIntake(input, "127.0.0.1", "Vitest");
-    const second = await processPatientIntake(input, "127.0.0.1", "Vitest");
+    const options = { inspectorToken: "synthetic-integration-session" };
+    input.email = `repeat-${Date.now()}@example.test`;
+    const first = await processPatientIntake(input, "127.0.0.1", "Vitest", options);
+    const second = await processPatientIntake(input, "127.0.0.1", "Vitest", options);
 
     expect(first.deduplicated).toBe(false);
     expect(second.deduplicated).toBe(true);
     expect(second.patientId).toBe(first.patientId);
 
-    const rec = getVaultRecord(first.patientId);
+    const rec = await getVaultRecord(first.patientId);
     expect(rec).not.toBeNull();
     expect(rec?.scrubbedSymptoms).not.toContain("Sarah");
     expect(rec?.scrubbedSymptoms).not.toContain("Connor");
@@ -57,7 +59,7 @@ describe("Phase 3: Backend State Machine, Two-Layer Idempotency & Burned Capabil
       {
         firstName: "Elena",
         lastName: "Fisher",
-        email: "elena.fisher@example.com",
+        email: `elena-${Date.now()}@example.test`,
         phone: "415-555-8899",
         dob: "1990-08-24",
         insuranceProvider: "BlueCross_BlueShield",
@@ -77,7 +79,7 @@ describe("Phase 3: Backend State Machine, Two-Layer Idempotency & Burned Capabil
       "BlueCross_BlueShield"
     );
 
-    applyN8nTriageCallback({
+    await applyN8nTriageCallback({
       patient_uuid: intake.patientId,
       status: "CRM_SYNCED",
       ai_triage: triage,
@@ -86,47 +88,43 @@ describe("Phase 3: Backend State Machine, Two-Layer Idempotency & Burned Capabil
     });
 
     // Clinician decrypted view logs PHI_DECRYPTED_VIEW
-    const view = decryptVaultRecordForClinician(
+    const view = await decryptVaultRecordForClinician(
       intake.patientId,
       "dr_chen_demo"
     );
     expect(view?.decryptedPii.firstName).toBe("Elena");
-    expect(
-      view?.record.auditLogs.some((l) => l.action === "PHI_DECRYPTED_VIEW")
-    ).toBe(true);
+    expect((await getVaultRecord(intake.patientId))?.auditLogs.some(l => l.action === "PHI_DECRYPTED_VIEW")).toBe(true);
 
     // Clinician approves & generates 48h token + blind notify
-    const approval = approvePatientForOnboarding(
+    const approval = await approvePatientForOnboarding(
       intake.patientId,
       "dr_chen_demo",
       "Dr. Sarah Chen, MD"
     );
     expect(approval).not.toBeNull();
     expect(approval?.record.status).toBe("APPROVED");
-    expect(
-      approval?.record.auditLogs.some((l) => l.action === "BLIND_NOTIFY_SENT")
-    ).toBe(true);
+    expect((await getVaultRecord(intake.patientId))?.deliveries.some(d => d.stage === "ONBOARDING_DISPATCH")).toBe(true);
 
     // Patient completes 3-step onboarding -> burns token
     const rawToken = approval!.rawToken;
-    const completed = completePatientOnboarding({
+    const completed = await completePatientOnboarding({
       rawToken,
       kycIdType: "US_DRIVER_LICENSE",
       kycCardNumberLast4: "8877",
       nppSignatureText: "Elena Fisher",
-      appointmentSlotIso: "2026-10-20T14:00:00.000Z",
+      appointmentSlotIso: new Date(Date.now() + 86400000).toISOString(),
     });
     expect(completed.code).toBe(200);
     expect(completed.record?.status).toBe("ONBOARDED");
     expect(completed.record?.tokenUsedAt).not.toBeNull();
 
     // Second attempt with the burned token is rejected with 410 Gone
-    const replayAttempt = completePatientOnboarding({
+    const replayAttempt = await completePatientOnboarding({
       rawToken,
       kycIdType: "US_DRIVER_LICENSE",
       kycCardNumberLast4: "8877",
       nppSignatureText: "Elena Fisher",
-      appointmentSlotIso: "2026-10-20T14:00:00.000Z",
+      appointmentSlotIso: new Date(Date.now() + 86400000).toISOString(),
     });
     expect(replayAttempt.code).toBe(410);
     expect(replayAttempt.alreadyCompleted).toBe(true);

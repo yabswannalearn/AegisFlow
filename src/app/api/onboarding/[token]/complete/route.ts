@@ -12,7 +12,7 @@ export async function GET(
 ) {
   const { token } = await context.params;
   const tokenHash = sha256Hash(token);
-  const record = getVaultRecordByTokenHash(tokenHash);
+  const record = await getVaultRecordByTokenHash(tokenHash);
 
   if (!record) {
     return NextResponse.json(
@@ -21,13 +21,12 @@ export async function GET(
     );
   }
 
+  const triage = record.aiTriageJson as { recommended_specialty?: string; copay_estimate_usd?: number } | null;
   const burned = record.tokenUsedAt !== null;
-  const expired =
-    record.tokenExpiresAt !== null &&
-    record.tokenExpiresAt.getTime() < Date.now();
+  const expired = record.tokenExpiresAt === null || record.tokenExpiresAt.getTime() < Date.now();
 
   return NextResponse.json({
-    valid: !burned && !expired,
+    valid: !burned && !expired && record.status === "APPROVED",
     burned,
     expired,
     patientId: record.id,
@@ -38,8 +37,8 @@ export async function GET(
     assignedDoctor:
       record.assignedDoctor ?? "Dr. Sarah Chen, MD (Cardiology)",
     recommendedSpecialty:
-      record.aiTriageJson?.recommended_specialty ?? "Cardiology",
-    copayEstimateUsd: record.aiTriageJson?.copay_estimate_usd ?? 35,
+      triage?.recommended_specialty ?? "Cardiology",
+    copayEstimateUsd: triage?.copay_estimate_usd ?? 35,
     appointmentSlot: record.appointmentSlot,
     hubspotDealId: record.hubspotDealId,
     hubspotContactId: record.hubspotContactId,
@@ -50,7 +49,7 @@ const CompleteOnboardingSchema = z.object({
   kycIdType: z.string().min(2),
   kycCardNumberLast4: z.string().min(4).max(4),
   nppSignatureText: z.string().min(3, "Legal e-signature is required"),
-  appointmentSlotIso: z.string().min(5, "Appointment time slot is required"),
+  appointmentSlotIso: z.string().datetime(),
 });
 
 export async function POST(
@@ -75,7 +74,7 @@ export async function POST(
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "127.0.0.1";
 
-  const result = completePatientOnboarding({
+  const result = await completePatientOnboarding({
     rawToken: token,
     ...parsed.data,
     ipAddress: ip,
@@ -93,12 +92,12 @@ export async function POST(
 
   return NextResponse.json({
     message:
-      "Patient onboarding complete. Single-use capability token burned; HubSpot Contact upgraded to customer and Deal moved to Closed Won.",
+      "Appointment recorded and capability token burned. CRM synchronization is queued.",
     patientId: result.record.id,
     status: result.record.status,
     tokenBurnedAt: result.record.tokenUsedAt,
     appointmentSlot: result.record.appointmentSlot,
-    hubspotDealStage: "Closed Won - Appointment Booked",
-    hubspotContactLifecycle: "customer",
+    hubspotDealStage: "Synchronization queued",
+    hubspotContactLifecycle: "Synchronization queued",
   });
 }

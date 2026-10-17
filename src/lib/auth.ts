@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
+import { requiredSecret } from "./config";
 
 export const CLINICIAN_COOKIE_NAME = "aegis_clinician_session";
 const DEFAULT_JWT_SECRET = "aegis-dev-clinician-rbac-jwt-secret-key-2026";
@@ -19,7 +20,7 @@ export const DEMO_CLINICIAN_PROFILE: ClinicianSessionPayload = {
 
 function getJwtSecretKey(overrideSecret?: string): Uint8Array {
   const secret =
-    overrideSecret ?? process.env.JWT_RBAC_SECRET ?? DEFAULT_JWT_SECRET;
+    overrideSecret ?? requiredSecret("JWT_RBAC_SECRET", DEFAULT_JWT_SECRET);
   return new TextEncoder().encode(secret);
 }
 
@@ -57,6 +58,7 @@ export async function verifyClinicianToken(
     const secretKey = getJwtSecretKey(overrideSecret);
     const { payload } = await jwtVerify(token, secretKey, {
       issuer: "aegisflow:rbac",
+      algorithms: ["HS256"],
     });
 
     if (payload.role !== "CLINICIAN" || typeof payload.sub !== "string") {

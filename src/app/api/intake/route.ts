@@ -1,4 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import crypto from "crypto";
+import { INSPECTOR_COOKIE } from "@/lib/access";
+import { dispatchPendingOutbox } from "@/lib/outbox";
+import { WorkflowError } from "@/lib/vault-store";
 import { IntakeRequestSchema, processPatientIntake } from "@/lib/vault-store";
 
 export async function POST(request: NextRequest) {
@@ -24,10 +28,11 @@ export async function POST(request: NextRequest) {
     const result = await processPatientIntake(
       parsed.data,
       ipAddress,
-      userAgent
+      userAgent,
+      { inspectorToken: request.cookies.get(INSPECTOR_COOKIE)?.value ?? crypto.randomBytes(32).toString("hex") }
     );
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         message: result.deduplicated
           ? "Idempotent submission matched existing PatientVault record"
@@ -41,13 +46,17 @@ export async function POST(request: NextRequest) {
       },
       { status: 202 }
     );
+    response.cookies.set(INSPECTOR_COOKIE, result.inspectorToken, { httpOnly: true, sameSite: "strict", path: "/", maxAge: 3600, secure: request.nextUrl.protocol === "https:" });
+    after(() => dispatchPendingOutbox());
+    return response;
   } catch (err) {
+    console.error("INTAKE_FAILED", { name: err instanceof Error ? err.name : "Unknown", code: typeof err === "object" && err && "code" in err ? err.code : undefined });
     return NextResponse.json(
       {
         error: "Failed to process patient intake",
-        message: err instanceof Error ? err.message : "Unknown error",
+        message: err instanceof WorkflowError ? err.message : "Intake could not be stored. Please retry.",
       },
-      { status: 500 }
+      { status: err instanceof WorkflowError ? err.status : 503 }
     );
   }
 }

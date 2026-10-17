@@ -1,0 +1,11 @@
+# Apply after the existing n8n instance's Compose file, using AegisFlow's
+# .env for interpolation. Preserve its current volumes and encryption key.
+# Only these integration values enter n8n; the Patient Vault key stays in app.
+services:
+  n8n:
+    environment:
+      AEGIS_WEBHOOK_SECRET: ${AEGIS_WEBHOOK_SECRET:?Set AEGIS_WEBHOOK_SECRET}
+      AEGIS_TOOL_API_KEY: ${AEGIS_TOOL_API_KEY:?Set AEGIS_TOOL_API_KEY}
+      NEXTJS_INTERNAL_URL: http://host.docker.internal:3005
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto

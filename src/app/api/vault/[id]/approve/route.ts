@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { WorkflowError } from "@/lib/vault-store";
+import { dispatchPendingOutbox } from "@/lib/outbox";
 import {
   CLINICIAN_COOKIE_NAME,
   verifyClinicianToken,
@@ -29,7 +31,7 @@ export async function GET(
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "127.0.0.1";
-  const decrypted = decryptVaultRecordForClinician(id, session.sub, ip, true);
+  const decrypted = await decryptVaultRecordForClinician(id, session.sub, ip, true);
 
   if (!decrypted) {
     return NextResponse.json(
@@ -50,14 +52,14 @@ export async function GET(
     hubspotDealId: decrypted.record.hubspotDealId,
     assignedDoctor: decrypted.record.assignedDoctor,
     magicLinkUrl:
-      decrypted.record.blindNotificationDebug?.magicLinkUrl ?? null,
+      null,
     rawOnboardingToken:
-      decrypted.record.rawOnboardingTokenForDemo ?? null,
+      null,
     auditLogs: decrypted.record.auditLogs,
   });
 }
 
-export async function POST(
+async function approve(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -84,7 +86,7 @@ export async function POST(
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     "127.0.0.1";
 
-  const approval = approvePatientForOnboarding(
+  const approval = await approvePatientForOnboarding(
     id,
     session.sub,
     assignedDoctor,
@@ -100,7 +102,7 @@ export async function POST(
 
   return NextResponse.json({
     message:
-      "Patient approved. 48h SHA-256 capability token generated and Blind Notification dispatched.",
+      "Patient approved. Onboarding invitation queued for delivery.",
     patientId: id,
     status: approval.record.status,
     assignedDoctor,
@@ -109,4 +111,9 @@ export async function POST(
     magicLinkUrl: approval.magicLinkUrl,
     onboardingPath: `/onboarding/${approval.rawToken}`,
   });
+}
+
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try { const response = await approve(request, context); if (response.ok) after(() => dispatchPendingOutbox()); return response; }
+  catch (error) { return NextResponse.json({ error: error instanceof WorkflowError ? error.message : "Approval failed" }, { status: error instanceof WorkflowError ? error.status : 503 }); }
 }

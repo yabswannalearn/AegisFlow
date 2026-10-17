@@ -17,6 +17,12 @@ import {
 } from "../lib/auth";
 
 describe("Gate 1: Zero-PII Leak Unit Test Suite (25 Synthetic Clinical Paragraphs)", () => {
+  it("removes an alternate email even after contextual name replacements", () => {
+    const result = scrubSymptoms("Contact marcus.vance@acme.org about the rash.", {
+      firstName: "Marcus", lastName: "Vance", email: "different@example.test",
+    });
+    expect(result.scrubbedText).toBe("Contact [REDACTED_EMAIL] about the rash.");
+  });
   const defaultKnown: KnownPatientEntities = {
     firstName: "Jane",
     lastName: "Doe",
@@ -229,7 +235,7 @@ describe("Gate 2: Cryptographic Envelope & HMAC Replay Tamper Tests", () => {
       "99481a7b-3c2d-4e9f-8a1b-772190c8e112"
     );
     expect(alias.firstName).toBe("Patient_99481a");
-    expect(alias.email).toBe("99481a@vault.aegisflow.internal");
+    expect(alias.email).toBe("99481a7b-3c2d-4e9f-8a1b-772190c8e112@vault.example.com");
 
     const cap = generateCapabilityToken();
     expect(cap.rawToken).toHaveLength(64);

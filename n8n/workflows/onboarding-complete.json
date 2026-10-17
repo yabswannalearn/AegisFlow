@@ -1,52 +1,253 @@
-[
-  {
-    "id": "AegisOnboardingComplete03",
-    "name": "AegisFlow — Workflow #3: Patient Onboarding Completion & HubSpot Closed-Won Sync",
-    "active": false,
-    "isArchived": false,
-    "nodes": [
-      {
-        "parameters": {
-          "httpMethod": "POST",
-          "path": "aegis-onboarding-complete",
-          "responseMode": "onReceived",
-          "options": {}
-        },
-        "id": "wf3-node-01",
-        "name": "01. Onboarding Complete Webhook",
-        "type": "n8n-nodes-base.webhook",
-        "typeVersion": 2,
-        "position": [-560, -80],
-        "webhookId": "aegis-onboarding-complete-03"
+{
+  "id": "AegisOnboardingComplete03",
+  "name": "AegisFlow — Appointment completion and HubSpot sync",
+  "nodes": [
+    {
+      "id": "signed-webhook",
+      "name": "Signed webhook",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aegis-onboarding-complete",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
       },
-      {
-        "parameters": {
-          "jsCode": "// Node 02: Transition HubSpot Deal -> Closed Won & Contact lifecyclestage -> customer\nconst body = $input.first().json.body || $input.first().json;\n\nreturn [{\n  json: {\n    patient_uuid: body.patient_uuid,\n    hubspot_deal_stage: 'Closed Won - Appointment Booked',\n    hubspot_contact_lifecyclestage: 'customer',\n    appointment_datetime: body.appointment_datetime,\n    clinic_notification: `New Patient Onboarded (Zero-PHI Alias Patient_${String(body.patient_uuid).slice(0, 6)}): Deal moved to Closed-Won.`\n  }\n}];"
-        },
-        "id": "wf3-node-02",
-        "name": "02. HubSpot Deal -> Closed Won & Contact -> Customer",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [-240, -80]
-      }
-    ],
-    "connections": {
-      "01. Onboarding Complete Webhook": {
-        "main": [
-          [
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 2,
+      "webhookId": "AegisOnboardingComplete03-webhook"
+    },
+    {
+      "id": "verify-hmac",
+      "name": "Verify HMAC",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const crypto=require('crypto');const item=$input.first();const headers=item.json.headers||{};const rawBody=(await this.helpers.getBinaryDataBuffer(0,'data')).toString('utf8');const timestamp=headers['x-aegis-timestamp'];const signature=headers['x-aegis-signature'];let authorized=false;let body;try{body=JSON.parse(rawBody);if(/^\\d+$/.test(timestamp||'')&&/^[a-f0-9]{64}$/i.test(signature||'')&&Math.abs(Date.now()/1000-Number(timestamp))<=300){const expected=crypto.createHmac('sha256',$env.AEGIS_WEBHOOK_SECRET).update(timestamp+'.'+rawBody).digest();authorized=crypto.timingSafeEqual(Buffer.from(signature,'hex'),expected);}if(!/^[a-f0-9-]{36}$/i.test(body.patient_uuid||''))authorized=false;}catch{}return [{json:{authorized,request:authorized?body:{}}}];"
+      },
+      "position": [
+        220,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "authorized-",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
             {
-              "node": "02. HubSpot Deal -> Closed Won & Contact -> Customer",
-              "type": "main",
-              "index": 0
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "position": [
+        440,
+        0
+      ],
+      "typeVersion": 2.2
+    },
+    {
+      "id": "accept-dispatch",
+      "name": "Accept dispatch",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"accepted\":true}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "position": [
+        660,
+        0
+      ],
+      "typeVersion": 1.4
+    },
+    {
+      "id": "reject-signature",
+      "name": "Reject signature",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\":\"Invalid signature\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "position": [
+        660,
+        220
+      ],
+      "typeVersion": 1.4
+    },
+    {
+      "id": "prepare-intake",
+      "name": "Prepare intake",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "return [{json:$input.first().json.request}];"
+      },
+      "position": [
+        880,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "sign-crm-sync",
+      "name": "Sign CRM sync",
+      "type": "n8n-nodes-base.code",
+      "parameters": {
+        "jsCode": "const crypto=require('crypto');function sign(payload){const rawBody=JSON.stringify(payload);const timestamp=String(Math.floor(Date.now()/1000));return {rawBody,timestamp,signature:crypto.createHmac('sha256',$env.AEGIS_WEBHOOK_SECRET).update(timestamp+'.'+rawBody).digest('hex')};}return [{json:sign({patient_uuid:$('Prepare intake').first().json.patient_uuid,stage:'ONBOARDED'})}];"
+      },
+      "position": [
+        1100,
+        0
+      ],
+      "typeVersion": 2
+    },
+    {
+      "id": "update-hubspot",
+      "name": "Update HubSpot",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NEXTJS_INTERNAL_URL + \"/api/internal/crm\" }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-aegis-signature",
+              "value": "={{ $json.signature }}"
+            },
+            {
+              "name": "x-aegis-timestamp",
+              "value": "={{ $json.timestamp }}"
             }
           ]
-        ]
-      }
-    },
-    "settings": {
-      "executionOrder": "v1",
-      "saveDataSuccessExecution": "none",
-      "saveDataErrorExecution": "all"
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.rawBody }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "position": [
+        1320,
+        0
+      ],
+      "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
     }
-  }
-]
+  ],
+  "connections": {
+    "Signed webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Accept dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept dispatch": {
+      "main": [
+        [
+          {
+            "node": "Prepare intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare intake": {
+      "main": [
+        [
+          {
+            "node": "Sign CRM sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign CRM sync": {
+      "main": [
+        [
+          {
+            "node": "Update HubSpot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false
+  },
+  "active": false
+}

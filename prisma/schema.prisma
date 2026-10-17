@@ -66,14 +66,38 @@ model PatientVault {
   hubspotContactId    String?         @db.VarChar(64)
   hubspotDealId       String?         @db.VarChar(64)
   lastError           String?         @db.Text
+  encryptedOnboardingToken String?    @db.Text
+  executionMode       String          @default("PENDING")
+  crmSyncStage        String?
+  notificationMode    String?
+  inspectorAccessHash String?         @db.VarChar(64)
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
 
   consents            ConsentRecord[]
   auditLogs           AuditLog[]
+  deliveries          OutboxDelivery[]
 
   @@index([emailHash])
   @@index([status])
+}
+
+model OutboxDelivery {
+  id               String       @id @default(uuid()) @db.Uuid
+  patientId        String       @db.Uuid
+  stage            String       @db.VarChar(40)
+  idempotencyKey   String       @unique @db.VarChar(128)
+  encryptedPayload String       @db.Text
+  status           String       @default("PENDING")
+  attempts         Int          @default(0)
+  availableAt      DateTime     @default(now())
+  leaseUntil       DateTime?
+  lastError        String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  patient          PatientVault @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
 }
 
 model ConsentRecord {
@@ -81,7 +105,7 @@ model ConsentRecord {
   patientId     String       @db.Uuid
   consentType   ConsentType
   accepted      Boolean      @default(true)
-  signatureText String?      @db.VarChar(255)
+  signatureText String?      @db.Text
   ipAddress     String       @db.VarChar(64)
   userAgent     String       @db.Text
   policyVersion String       @db.VarChar(32)

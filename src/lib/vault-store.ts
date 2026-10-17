@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { z } from "zod";
+import { Prisma, type AuditAction, type ActorRole } from "@prisma/client";
 import { prisma } from "./prisma";
 import {
   encryptPhi,
@@ -8,590 +8,197 @@ import {
   generateCapabilityToken,
   generatePseudonymousAlias,
 } from "./crypto";
-import { signWebhookPayload, SignedWebhookHeaders } from "./hmac";
-import { scrubSymptoms, RedactedSpan } from "./scrubber";
-import { logAudit } from "./audit";
+import { scrubSymptoms } from "./scrubber";
+import { appUrl, isDemoMode } from "./config";
+import {
+  AiTriageOutputSchema,
+  runDeterministicTriageAnalysis,
+  type AiTriageOutput,
+  type IntakeRequestInput,
+} from "./triage";
+export {
+  IntakeRequestSchema,
+  AiTriageOutputSchema,
+  evaluateInsuranceEligibility,
+  runDeterministicTriageAnalysis,
+} from "./triage";
+export type { AiTriageOutput, IntakeRequestInput } from "./triage";
 
-export const IntakeRequestSchema = z.object({
-  firstName: z.string().min(2, "First name is required"),
-  lastName: z.string().min(2, "Last name is required"),
-  email: z.string().email("Valid email is required"),
-  phone: z.string().min(7, "Phone number is required"),
-  dob: z.string().min(4, "Date of birth is required"),
-  insuranceProvider: z.enum([
-    "Aetna_PPO",
-    "BlueCross_BlueShield",
-    "UnitedHealthcare",
-    "Cigna_Health",
-    "Kaiser_Permanente",
-    "Self_Pay_Uninsured",
-  ]),
-  memberId: z.string().min(3, "Insurance Member ID is required"),
-  groupNumber: z.string().optional().default("GRP-DEFAULT"),
-  rawSymptoms: z.string().min(10, "Please describe clinical symptoms"),
-  hipaaAccepted: z.literal(true, {
-    errorMap: () => ({ message: "HIPAA Authorization is required" }),
-  }),
-  tcpaSmsAccepted: z.literal(true, {
-    errorMap: () => ({ message: "TCPA SMS Opt-In is required" }),
-  }),
-  policyVersion: z.string().optional().default("HIPAA-NPP-2026.1"),
-});
-
-export type IntakeRequestInput = z.infer<typeof IntakeRequestSchema>;
-
-export const AiTriageOutputSchema = z.object({
-  urgency_level: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-  recommended_specialty: z.enum([
-    "General Medicine",
-    "Cardiology",
-    "Dermatology",
-    "Mental Health",
-    "Neurology",
-    "Emergency Care",
-  ]),
-  triage_rationale_redacted: z.string().min(5),
-  insurance_verified: z.boolean(),
-  copay_estimate_usd: z.number().nonnegative(),
-  suggested_onboarding_track: z.enum([
-    "FastTrack",
-    "Standard",
-    "ManualReview",
-    "Emergency911",
-  ]),
-  prompt_injection_blocked: z.boolean().optional().default(false),
-});
-
-export type AiTriageOutput = z.infer<typeof AiTriageOutputSchema>;
-
-export interface InMemoryVaultRecord {
-  id: string;
-  emailHash: string;
-  encryptedPiiJson: string;
-  encryptedSymptoms: string;
-  encryptedKycJson: string | null;
-  scrubbedSymptoms: string;
-  redactedSpansJson: RedactedSpan[];
-  aiTriageJson: AiTriageOutput | null;
-  onboardingTokenHash: string | null;
-  rawOnboardingTokenForDemo?: string | null;
-  tokenExpiresAt: Date | null;
-  tokenUsedAt: Date | null;
-  appointmentSlot: Date | null;
-  assignedDoctor: string | null;
-  status:
-    | "SCRUBBED_DISPATCHED"
-    | "WEBHOOK_RETRY_PENDING"
-    | "AI_TRIAGED"
-    | "CRM_SYNCED"
-    | "TRIAGE_FAILED_MANUAL_REVIEW"
-    | "EMERGENCY_HALTED"
-    | "APPROVED"
-    | "ONBOARDED";
-  hubspotContactId: string | null;
-  hubspotDealId: string | null;
-  lastError: string | null;
-  outboundWebhookDebug?: {
-    url: string;
-    headers: Record<string, string>;
-    payload: Record<string, unknown>;
-  };
-  blindNotificationDebug?: {
-    channel: string;
-    recipientMasked: string;
-    magicLinkUrl: string;
-    dispatchedAt: string;
-  };
-  createdAt: Date;
-  updatedAt: Date;
-  consents: Array<{
-    id: string;
-    consentType: "HIPAA_INTAKE" | "TCPA_SMS" | "TELEHEALTH_NPP";
-    signatureText: string | null;
-    ipAddress: string;
-    policyVersion: string;
-    createdAt: Date;
-  }>;
-  auditLogs: Array<{
-    id: string;
-    actorId: string;
-    actorRole: "PATIENT" | "N8N_SYSTEM" | "CLINICIAN";
-    action: string;
-    metadata: Record<string, unknown>;
-    ipAddress: string;
-    createdAt: Date;
-  }>;
-}
-
-const globalStore = globalThis as unknown as {
-  aegisMemoryVault?: Map<string, InMemoryVaultRecord>;
-  aegisIdempotencyMap?: Map<string, string>;
+const include = {
+  consents: true,
+  auditLogs: { orderBy: { createdAt: "asc" as const } },
+  deliveries: true,
 };
-
-const memoryVault =
-  globalStore.aegisMemoryVault ??
-  (globalStore.aegisMemoryVault = new Map<string, InMemoryVaultRecord>());
-const memoryIdempotency =
-  globalStore.aegisIdempotencyMap ??
-  (globalStore.aegisIdempotencyMap = new Map<string, string>());
-
-/**
- * Deterministic Mock Insurance Payer Rules (used by /api/mock/insurance & fallback simulator)
- */
-export function evaluateInsuranceEligibility(payer: string) {
-  const catalog: Record<
-    string,
-    {
-      verified: boolean;
-      copayUsd: number;
-      planTier: string;
-      priorAuthRequired: boolean;
-    }
-  > = {
-    Aetna_PPO: {
-      verified: true,
-      copayUsd: 35,
-      planTier: "PPO Gold National",
-      priorAuthRequired: false,
-    },
-    BlueCross_BlueShield: {
-      verified: true,
-      copayUsd: 25,
-      planTier: "BCBS Premier Plus",
-      priorAuthRequired: false,
-    },
-    UnitedHealthcare: {
-      verified: true,
-      copayUsd: 40,
-      planTier: "UHC Choice Plus",
-      priorAuthRequired: false,
-    },
-    Cigna_Health: {
-      verified: true,
-      copayUsd: 30,
-      planTier: "Cigna Open Access",
-      priorAuthRequired: false,
-    },
-    Kaiser_Permanente: {
-      verified: true,
-      copayUsd: 20,
-      planTier: "Kaiser HMO Integrated",
-      priorAuthRequired: true,
-    },
-    Self_Pay_Uninsured: {
-      verified: false,
-      copayUsd: 129,
-      planTier: "Transparent Cash Pay",
-      priorAuthRequired: false,
-    },
-  };
-
-  return (
-    catalog[payer] ?? {
-      verified: true,
-      copayUsd: 45,
-      planTier: "Standard Commercial",
-      priorAuthRequired: false,
-    }
-  );
+type Tx = Prisma.TransactionClient;
+export class WorkflowError extends Error {
+  constructor(
+    message: string,
+    public status = 409,
+  ) {
+    super(message);
+  }
 }
-
-/**
- * Deterministic Clinical Triage Classifier (used when n8n is unreachable / sleeping per ADR-005 & ADR-007)
- * Enforces XML sandboxing against prompt injection and CRITICAL emergency short-circuits.
- */
-export function runDeterministicTriageAnalysis(
-  scrubbedSymptoms: string,
-  insuranceProvider: string
-): AiTriageOutput {
-  const lower = scrubbedSymptoms.toLowerCase();
-  const payer = evaluateInsuranceEligibility(insuranceProvider);
-
-  const injectionDetected =
-    lower.includes("ignore all previous instructions") ||
-    lower.includes("ignore previous instructions") ||
-    lower.includes("system prompt") ||
-    lower.includes("classify urgency_level as low");
-
-  // Emergency Short-Circuit Detection (ADR-005)
-  if (
-    lower.includes("heart attack") ||
-    lower.includes("crushing chest pain") ||
-    lower.includes("cannot breathe") ||
-    lower.includes("can't breathe") ||
-    lower.includes("stroke") ||
-    lower.includes("unconscious") ||
-    lower.includes("suicidal") ||
-    lower.includes("radiating to left arm")
-  ) {
-    return {
-      urgency_level: "CRITICAL",
-      recommended_specialty: "Emergency Care",
-      triage_rationale_redacted: injectionDetected
-        ? "[PROMPT INJECTION ATTEMPT BLOCKED BY <untrusted_symptom_text> SANDBOX] Critical life-threatening cardiac/respiratory red flags detected in scrubbed clinical text. Immediate 911 emergency short-circuit triggered."
-        : "Critical life-threatening symptom indicators (acute cardiac/respiratory distress) detected. Automated self-scheduling halted; immediate 911 emergency escalation triggered.",
-      insurance_verified: payer.verified,
-      copay_estimate_usd: 0,
-      suggested_onboarding_track: "Emergency911",
-      prompt_injection_blocked: injectionDetected,
-    };
-  }
-
-  if (
-    lower.includes("chest tightness") ||
-    lower.includes("palpitation") ||
-    lower.includes("arrhythmia") ||
-    lower.includes("shortness of breath") ||
-    lower.includes("high blood pressure")
-  ) {
-    return {
-      urgency_level: "HIGH",
-      recommended_specialty: "Cardiology",
-      triage_rationale_redacted: injectionDetected
-        ? "[PROMPT INJECTION BLOCKED] Sub-acute cardiopulmonary symptoms warrant priority Cardiology evaluation within 24-48 hours."
-        : "Sub-acute cardiopulmonary symptoms (chest tightness / palpitations) warrant priority Cardiology evaluation within 24-48 hours.",
-      insurance_verified: payer.verified,
-      copay_estimate_usd: payer.copayUsd,
-      suggested_onboarding_track: "FastTrack",
-      prompt_injection_blocked: injectionDetected,
-    };
-  }
-
-  if (
-    lower.includes("mole") ||
-    lower.includes("rash") ||
-    lower.includes("eczema") ||
-    lower.includes("hives") ||
-    lower.includes("skin")
-  ) {
-    return {
-      urgency_level: "LOW",
-      recommended_specialty: "Dermatology",
-      triage_rationale_redacted:
-        "Non-emergent dermatological presentation suitable for standard asynchronous or video Dermatology consultation.",
-      insurance_verified: payer.verified,
-      copay_estimate_usd: payer.copayUsd,
-      suggested_onboarding_track: "Standard",
-      prompt_injection_blocked: injectionDetected,
-    };
-  }
-
-  if (
-    lower.includes("migraine") ||
-    lower.includes("dizziness") ||
-    lower.includes("vision") ||
-    lower.includes("numbness")
-  ) {
-    return {
-      urgency_level: "MEDIUM",
-      recommended_specialty: "Neurology",
-      triage_rationale_redacted:
-        "Neurological symptoms (migraine / vertigo / visual disturbance) routed to Neurology specialist review.",
-      insurance_verified: payer.verified,
-      copay_estimate_usd: payer.copayUsd,
-      suggested_onboarding_track: "Standard",
-      prompt_injection_blocked: injectionDetected,
-    };
-  }
-
-  return {
-    urgency_level: "MEDIUM",
-    recommended_specialty: "General Medicine",
-    triage_rationale_redacted: injectionDetected
-      ? "[PROMPT INJECTION BLOCKED] General clinical presentation routed to Internal Medicine for standard clinician review."
-      : "General clinical presentation routed to Internal Medicine for standard clinician triage review.",
-    insurance_verified: payer.verified,
-    copay_estimate_usd: payer.copayUsd,
-    suggested_onboarding_track: payer.verified ? "Standard" : "ManualReview",
-    prompt_injection_blocked: injectionDetected,
-  };
+export function audit(
+  tx: Tx,
+  patientId: string,
+  action: AuditAction,
+  actorId: string,
+  actorRole: ActorRole,
+  metadata: Prisma.InputJsonValue = {},
+  ipAddress = "127.0.0.1",
+) {
+  return tx.auditLog.create({
+    data: { patientId, action, actorId, actorRole, metadata, ipAddress },
+  });
 }
-
-/**
- * Creates or returns an existing idempotent PatientVault intake record,
- * encrypts PHI with AES-256-GCM, scrubs PII, and dispatches async to n8n.
- */
+export function getVaultRecord(patientId: string) {
+  if (!/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(patientId)) return Promise.resolve(null);
+  return prisma.patientVault.findUnique({ where: { id: patientId }, include });
+}
+export function getVaultRecordByTokenHash(tokenHash: string) {
+  return prisma.patientVault.findUnique({
+    where: { onboardingTokenHash: tokenHash },
+    include,
+  });
+}
+export async function enqueueDelivery(
+  tx: Tx,
+  patientId: string,
+  stage: string,
+  payload: object,
+  key = `${stage}:${patientId}`,
+) {
+  return tx.outboxDelivery.upsert({
+    where: { idempotencyKey: key },
+    update: {},
+    create: {
+      patientId,
+      stage,
+      idempotencyKey: key,
+      encryptedPayload: encryptPhi(JSON.stringify(payload)),
+    },
+  });
+}
 export async function processPatientIntake(
   input: IntakeRequestInput,
   ipAddress: string,
-  userAgent: string
-): Promise<{
-  patientId: string;
-  idempotencyKey: string;
-  deduplicated: boolean;
-  status: string;
-}> {
+  userAgent: string,
+  options: { inspectorToken?: string } = {},
+) {
   const emailHash = sha256Hash(input.email);
-  const dateBucket = new Date().toISOString().slice(0, 10);
-  const idempotencyKey = `intake_${sha256Hash(`${emailHash}:${dateBucket}:${input.rawSymptoms.slice(0, 32)}`).slice(0, 24)}`;
-
-  // Check two-layer idempotency (ADR-007)
-  const existingMemId = memoryIdempotency.get(idempotencyKey);
-  if (existingMemId && memoryVault.has(existingMemId)) {
-    const existing = memoryVault.get(existingMemId)!;
+  const inspectorToken =
+    options.inspectorToken ?? crypto.randomBytes(32).toString("hex");
+  const inspectorAccessHash = sha256Hash(inspectorToken);
+  const demoScope = isDemoMode() ? inspectorAccessHash : "";
+  const idempotencyKey = `intake:${sha256Hash(`${emailHash}:${new Date().toISOString().slice(0, 10)}:${input.rawSymptoms}:${demoScope}`)}`;
+  async function duplicate(patientId: string) {
+    const record = await getVaultRecord(patientId);
+    if (!record || record.inspectorAccessHash !== inspectorAccessHash)
+      throw new WorkflowError(
+        "An intake already exists. Continue in the browser that submitted it.",
+      );
     return {
-      patientId: existing.id,
+      patientId,
       idempotencyKey,
       deduplicated: true,
-      status: existing.status,
+      status: record.status,
+      inspectorToken,
     };
   }
-
-  const patientId = crypto.randomUUID();
-  const encryptedPiiJson = encryptPhi(
-    JSON.stringify({
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email,
-      phone: input.phone,
-      dob: input.dob,
-      insuranceProvider: input.insuranceProvider,
-      memberId: input.memberId,
-      groupNumber: input.groupNumber,
-    })
-  );
-  const encryptedSymptoms = encryptPhi(input.rawSymptoms);
-
-  const scrubResult = scrubSymptoms(input.rawSymptoms, {
-    firstName: input.firstName,
-    lastName: input.lastName,
-    email: input.email,
-    phone: input.phone,
-    dob: input.dob,
-    memberId: input.memberId,
+  const existing = await prisma.webhookIdempotency.findUnique({
+    where: { key: idempotencyKey },
   });
-
-  const crmAlias = generatePseudonymousAlias(patientId);
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const vaultReviewUrl = `${appBaseUrl}/admin/vault/${patientId}`;
-
-  const webhookPayload = {
-    idempotency_key: idempotencyKey,
+  if (existing?.patientId) return duplicate(existing.patientId);
+  const patientId = crypto.randomUUID();
+  const {
+    rawSymptoms,
+    hipaaAccepted: _hipaa,
+    tcpaSmsAccepted: _tcpa,
+    policyVersion,
+    ...pii
+  } = input;
+  const scrubbed = scrubSymptoms(rawSymptoms, input);
+  const redactedSpans = scrubbed.redactedSpans.map(({ replacement, pass }) => ({
+    replacement,
+    pass,
+  }));
+  const alias = generatePseudonymousAlias(patientId);
+  const payload = {
     patient_uuid: patientId,
-    crm_alias: {
-      first_name: crmAlias.firstName,
-      last_name: crmAlias.lastName,
-      email: crmAlias.email,
-    },
+    idempotency_key: idempotencyKey,
+    crm_alias: { first_name: alias.firstName, email: alias.email },
     insurance_provider: input.insuranceProvider,
-    scrubbed_symptoms: scrubResult.scrubbedText,
-    xml_sandboxed_prompt_input: `<untrusted_symptom_text>\n${scrubResult.scrubbedText}\n</untrusted_symptom_text>`,
-    vault_review_url: vaultReviewUrl,
+    scrubbed_symptoms: scrubbed.scrubbedText,
+    vault_review_url: `${appUrl()}/admin/vault/${patientId}`,
   };
-
-  const rawBody = JSON.stringify(webhookPayload);
-  const signedHeaders = signWebhookPayload(rawBody);
-  const webhookUrl =
-    process.env.N8N_TRIAGE_WEBHOOK_URL ??
-    "http://localhost:5678/webhook/aegis-triage";
-
-  const now = new Date();
-  const record: InMemoryVaultRecord = {
-    id: patientId,
-    emailHash,
-    encryptedPiiJson,
-    encryptedSymptoms,
-    encryptedKycJson: null,
-    scrubbedSymptoms: scrubResult.scrubbedText,
-    redactedSpansJson: scrubResult.redactedSpans,
-    aiTriageJson: null,
-    onboardingTokenHash: null,
-    rawOnboardingTokenForDemo: null,
-    tokenExpiresAt: null,
-    tokenUsedAt: null,
-    appointmentSlot: null,
-    assignedDoctor: null,
-    status: "SCRUBBED_DISPATCHED",
-    hubspotContactId: null,
-    hubspotDealId: null,
-    lastError: null,
-    outboundWebhookDebug: {
-      url: webhookUrl,
-      headers: {
-        "content-type": "application/json",
-        ...signedHeaders,
-      },
-      payload: webhookPayload,
-    },
-    createdAt: now,
-    updatedAt: now,
-    consents: [
-      {
-        id: crypto.randomUUID(),
-        consentType: "HIPAA_INTAKE",
-        signatureText: `${input.firstName} ${input.lastName} (Digital Opt-In)`,
-        ipAddress,
-        policyVersion: input.policyVersion,
-        createdAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        consentType: "TCPA_SMS",
-        signatureText: `${input.phone} (SMS Opt-In)`,
-        ipAddress,
-        policyVersion: input.policyVersion,
-        createdAt: now,
-      },
-    ],
-    auditLogs: [
-      {
-        id: crypto.randomUUID(),
-        actorId: `patient_${crmAlias.shortId}`,
-        actorRole: "PATIENT",
-        action: "INTAKE_SUBMITTED",
-        metadata: {
-          policyVersion: input.policyVersion,
-          hipaaAccepted: true,
-          tcpaSmsAccepted: true,
-          encryptionCipher: "AES-256-GCM",
-        },
-        ipAddress,
-        createdAt: now,
-      },
-      {
-        id: crypto.randomUUID(),
-        actorId: "NEXTJS_BFF_SCRUBBER",
-        actorRole: "N8N_SYSTEM",
-        action: "PII_SCRUBBED",
-        metadata: {
-          redactionCount: scrubResult.redactionCount,
-          crmPseudonym: crmAlias.email,
-          idempotencyKey,
-        },
-        ipAddress,
-        createdAt: new Date(now.getTime() + 5),
-      },
-    ],
-  };
-
-  memoryVault.set(patientId, record);
-  memoryIdempotency.set(idempotencyKey, patientId);
-
-  // Best-effort persistence to PostgreSQL if DATABASE_URL is configured and container is running
-  if (process.env.DATABASE_URL) {
-    try {
-      await prisma.webhookIdempotency.create({
-      data: {
-        key: idempotencyKey,
-        workflowName: "triage-agent",
-        patientId,
-        status: "PROCESSING",
-      },
-    });
-    await prisma.patientVault.create({
-      data: {
-        id: patientId,
-        emailHash,
-        encryptedPiiJson,
-        encryptedSymptoms,
-        scrubbedSymptoms: scrubResult.scrubbedText,
-        redactedSpansJson: scrubResult.redactedSpans as unknown as object,
-        status: "SCRUBBED_DISPATCHED",
-      },
-    });
-    await logAudit({
-      actorId: `patient_${crmAlias.shortId}`,
-      actorRole: "PATIENT",
-      patientId,
-      action: "INTAKE_SUBMITTED",
-      ipAddress,
-      metadata: { idempotencyKey, crmAlias: crmAlias.email },
-    });
-      await logAudit({
-        actorId: "NEXTJS_BFF_SCRUBBER",
-        actorRole: "N8N_SYSTEM",
-        patientId,
-        action: "PII_SCRUBBED",
-        ipAddress,
-        metadata: { redactionCount: scrubResult.redactionCount },
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.webhookIdempotency.create({
+        data: { key: idempotencyKey, workflowName: "triage-agent", patientId },
       });
-    } catch {
-      // PostgreSQL optional fallback in demo mode
+      await tx.patientVault.create({
+        data: {
+          id: patientId,
+          emailHash,
+          encryptedPiiJson: encryptPhi(JSON.stringify(pii)),
+          encryptedSymptoms: encryptPhi(rawSymptoms),
+          scrubbedSymptoms: scrubbed.scrubbedText,
+          redactedSpansJson: redactedSpans,
+          inspectorAccessHash,
+          consents: {
+            create: ["HIPAA_INTAKE", "TCPA_SMS"].map((consentType) => ({
+              consentType: consentType as "HIPAA_INTAKE" | "TCPA_SMS",
+              accepted: true,
+              signatureText: encryptPhi("Digital opt-in"),
+              ipAddress,
+              userAgent,
+              policyVersion,
+            })),
+          },
+        },
+      });
+      await audit(
+        tx,
+        patientId,
+        "INTAKE_SUBMITTED",
+        `patient_${alias.shortId}`,
+        "PATIENT",
+        { policyVersion },
+        ipAddress,
+      );
+      await audit(
+        tx,
+        patientId,
+        "PII_SCRUBBED",
+        "NEXTJS_BFF_SCRUBBER",
+        "N8N_SYSTEM",
+        { redactionCount: scrubbed.redactionCount },
+        ipAddress,
+      );
+      await enqueueDelivery(tx, patientId, "TRIAGE", payload, idempotencyKey);
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const raced = await prisma.webhookIdempotency.findUnique({
+        where: { key: idempotencyKey },
+      });
+      if (raced?.patientId) return duplicate(raced.patientId);
     }
+    throw error;
   }
-
-  // Fire asynchronous webhook dispatch (ADR-003, ADR-004, ADR-007)
-  void dispatchTriageWebhookAsync(patientId, webhookUrl, rawBody, signedHeaders, input.insuranceProvider);
-
   return {
     patientId,
     idempotencyKey,
     deduplicated: false,
     status: "SCRUBBED_DISPATCHED",
+    inspectorToken,
   };
 }
 
-/**
- * Dispatches the signed intake payload to n8n asynchronously.
- * If n8n is unreachable/unactivated and DEMO_SIMULATE_N8N_IF_SLEEPING !== "false",
- * runs the deterministic simulation callback after 900ms so the X-Ray UI transitions smoothly.
- */
-export async function dispatchTriageWebhookAsync(
-  patientId: string,
-  webhookUrl: string,
-  rawBody: string,
-  signedHeaders: SignedWebhookHeaders,
-  insuranceProvider: string
-) {
-  const simulateIfSleeping =
-    (process.env.DEMO_SIMULATE_N8N_IF_SLEEPING ?? "true") !== "false";
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
-
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...signedHeaders,
-      },
-      body: rawBody,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (response.ok) {
-      return;
-    }
-    throw new Error(`n8n webhook returned HTTP ${response.status}`);
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : "Webhook timeout";
-    const rec = memoryVault.get(patientId);
-    if (!rec) return;
-
-    if (simulateIfSleeping) {
-      // Simulate realistic 850ms async n8n AI Agent + HubSpot CRM execution (ADR-007)
-      setTimeout(() => {
-        const current = memoryVault.get(patientId);
-        if (!current || current.aiTriageJson) return;
-
-        const triage = runDeterministicTriageAnalysis(
-          current.scrubbedSymptoms,
-          insuranceProvider
-        );
-        const alias = generatePseudonymousAlias(patientId);
-        applyN8nTriageCallback({
-          patient_uuid: patientId,
-          status:
-            triage.urgency_level === "CRITICAL"
-              ? "EMERGENCY_HALTED"
-              : "CRM_SYNCED",
-          ai_triage: triage,
-          hubspot_contact_id: `hs_cnt_${alias.shortId}`,
-          hubspot_deal_id: `hs_deal_${alias.shortId}`,
-          execution_mode: "SIMULATED_N8N_FALLBACK",
-        });
-      }, 850);
-    } else {
-      rec.status = "WEBHOOK_RETRY_PENDING";
-      rec.lastError = errorMsg;
-      rec.updatedAt = new Date();
-    }
-  }
-}
-
-export function applyN8nTriageCallback(payload: {
+export async function applyN8nTriageCallback(payload: {
   patient_uuid: string;
   status:
     | "AI_TRIAGED"
@@ -603,204 +210,199 @@ export function applyN8nTriageCallback(payload: {
   hubspot_deal_id?: string;
   error_message?: string;
   execution_mode?: string;
+  idempotency_key?: string;
 }) {
-  const rec = memoryVault.get(payload.patient_uuid);
-  if (!rec) return null;
-
-  const now = new Date();
-  if (payload.status === "TRIAGE_FAILED_MANUAL_REVIEW") {
-    rec.status = "TRIAGE_FAILED_MANUAL_REVIEW";
-    rec.lastError =
-      payload.error_message ?? "Downstream n8n workflow reported DLQ error";
-    rec.auditLogs.push({
-      id: crypto.randomUUID(),
-      actorId: "N8N_ERROR_DLQ",
-      actorRole: "N8N_SYSTEM",
-      action: "TRIAGE_FAILED",
-      metadata: {
-        error: rec.lastError,
-      },
-      ipAddress: "127.0.0.1",
-      createdAt: now,
+  if (payload.ai_triage)
+    payload.ai_triage = AiTriageOutputSchema.parse(payload.ai_triage);
+  const key = `callback:${sha256Hash(JSON.stringify(payload))}`;
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "PatientVault" WHERE id = ${payload.patient_uuid}::uuid FOR UPDATE`;
+    const record = await tx.patientVault.findUnique({
+      where: { id: payload.patient_uuid },
     });
-  } else {
+    if (!record) return null;
+    if (await tx.webhookIdempotency.findUnique({ where: { key } }))
+      return record;
+    if (["APPROVED", "ONBOARDED", "EMERGENCY_HALTED"].includes(record.status))
+      return record;
+    const failure = payload.status === "TRIAGE_FAILED_MANUAL_REVIEW";
+    if (!failure && !payload.ai_triage)
+      throw new WorkflowError("Triage result is required", 422);
     if (payload.ai_triage) {
-      rec.aiTriageJson = payload.ai_triage;
+      const pii = JSON.parse(decryptPhi(record.encryptedPiiJson));
+      payload.ai_triage.triage_rationale_redacted = scrubSymptoms(
+        payload.ai_triage.triage_rationale_redacted,
+        pii,
+      ).scrubbedText;
+      if (payload.ai_triage.urgency_level === "CRITICAL") {
+        payload.ai_triage.recommended_specialty = "Emergency Care";
+        payload.ai_triage.suggested_onboarding_track = "Emergency911";
+        payload.ai_triage.copay_estimate_usd = 0;
+      }
     }
-    rec.hubspotContactId =
-      payload.hubspot_contact_id ??
-      `hs_cnt_${payload.patient_uuid.slice(0, 6)}`;
-    rec.hubspotDealId =
-      payload.hubspot_deal_id ?? `hs_deal_${payload.patient_uuid.slice(0, 6)}`;
-    rec.status =
+    const status =
       payload.ai_triage?.urgency_level === "CRITICAL"
         ? "EMERGENCY_HALTED"
         : payload.status;
-    rec.lastError = null;
-
-    rec.auditLogs.push({
-      id: crypto.randomUUID(),
-      actorId: "N8N_TRIAGE_AGENT",
-      actorRole: "N8N_SYSTEM",
-      action: "AI_TRIAGED",
-      metadata: {
-        urgency: rec.aiTriageJson?.urgency_level,
-        specialty: rec.aiTriageJson?.recommended_specialty,
-        track: rec.aiTriageJson?.suggested_onboarding_track,
-        hubspotContactId: rec.hubspotContactId,
-        hubspotDealId: rec.hubspotDealId,
-        promptInjectionBlocked: rec.aiTriageJson?.prompt_injection_blocked,
-        mode: payload.execution_mode ?? "LIVE_N8N_WEBHOOK",
+    const updated = await tx.patientVault.update({
+      where: { id: record.id },
+      data: {
+        status,
+        aiTriageJson: payload.ai_triage as Prisma.InputJsonValue | undefined,
+        hubspotContactId: payload.hubspot_contact_id,
+        hubspotDealId: payload.hubspot_deal_id,
+        executionMode: payload.execution_mode ?? "LIVE_GEMINI_N8N",
+        lastError: failure ? "DOWNSTREAM_WORKFLOW_FAILED" : null,
+        crmSyncStage: payload.hubspot_deal_id ? "TRIAGED" : undefined,
       },
-      ipAddress: "127.0.0.1",
-      createdAt: now,
     });
-  }
-
-  rec.updatedAt = now;
-  return rec;
+    await tx.webhookIdempotency.create({
+      data: {
+        key,
+        workflowName: "triage-callback",
+        patientId: record.id,
+        status: "COMPLETED",
+      },
+    });
+    await audit(
+      tx,
+      record.id,
+      failure ? "TRIAGE_FAILED" : "AI_TRIAGED",
+      failure ? "N8N_ERROR_DLQ" : "GEMINI_TRIAGE_AGENT",
+      "N8N_SYSTEM",
+      {
+        urgency: payload.ai_triage?.urgency_level ?? "UNKNOWN",
+        mode: updated.executionMode,
+      },
+    );
+    await tx.webhookIdempotency.updateMany({
+      where: { patientId: record.id, workflowName: "triage-agent" },
+      data: { status: failure ? "FAILED" : "COMPLETED" },
+    });
+    return updated;
+  });
 }
 
-export function getVaultRecord(patientId: string): InMemoryVaultRecord | null {
-  return memoryVault.get(patientId) ?? null;
-}
-
-export function getVaultRecordByTokenHash(
-  tokenHash: string
-): InMemoryVaultRecord | null {
-  for (const rec of memoryVault.values()) {
-    if (rec.onboardingTokenHash === tokenHash) {
-      return rec;
-    }
-  }
-  return null;
-}
-
-/**
- * Decrypts a patient record for an authenticated clinician and logs PHI_DECRYPTED_VIEW in AuditLog (FR-3.2).
- */
-export function decryptVaultRecordForClinician(
+export async function decryptVaultRecordForClinician(
   patientId: string,
   clinicianId: string,
-  ipAddress: string = "127.0.0.1",
-  recordAudit: boolean = true
+  ipAddress = "127.0.0.1",
+  recordAudit = true,
 ) {
-  const rec = memoryVault.get(patientId);
-  if (!rec) return null;
-
-  const pii = JSON.parse(decryptPhi(rec.encryptedPiiJson)) as {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    dob: string;
-    insuranceProvider: string;
-    memberId: string;
-    groupNumber: string;
-  };
-  const rawSymptoms = decryptPhi(rec.encryptedSymptoms);
-
-  if (recordAudit) {
-    rec.auditLogs.push({
-      id: crypto.randomUUID(),
-      actorId: clinicianId,
-      actorRole: "CLINICIAN",
-      action: "PHI_DECRYPTED_VIEW",
-      metadata: {
-        reason: "Clinician HITL Triage Review",
-        fieldsDecrypted: ["encryptedPiiJson", "encryptedSymptoms"],
-      },
-      ipAddress,
-      createdAt: new Date(),
-    });
-  }
-
+  const record = await getVaultRecord(patientId);
+  if (!record) return null;
+  if (recordAudit)
+    await prisma.$transaction((tx) =>
+      audit(
+        tx,
+        patientId,
+        "PHI_DECRYPTED_VIEW",
+        clinicianId,
+        "CLINICIAN",
+        { reason: "Clinician review" },
+        ipAddress,
+      ),
+    );
   return {
-    record: rec,
-    decryptedPii: pii,
-    decryptedSymptoms: rawSymptoms,
+    record,
+    decryptedPii: JSON.parse(decryptPhi(record.encryptedPiiJson)),
+    decryptedSymptoms: decryptPhi(record.encryptedSymptoms),
   };
 }
-
-/**
- * Clinician approves triage, mints 48h SHA-256 single-use capability token, and triggers Blind Notification Dispatch (FR-3.3, ADR-001, ADR-007).
- */
-export function approvePatientForOnboarding(
+export async function approvePatientForOnboarding(
   patientId: string,
   clinicianId: string,
   assignedDoctor: string,
-  ipAddress: string = "127.0.0.1"
+  ipAddress = "127.0.0.1",
 ) {
-  const rec = memoryVault.get(patientId);
-  if (!rec) return null;
-
-  const { rawToken, tokenHash, expiresAt } = generateCapabilityToken();
-  rec.onboardingTokenHash = tokenHash;
-  rec.rawOnboardingTokenForDemo = rawToken;
-  rec.tokenExpiresAt = expiresAt;
-  rec.tokenUsedAt = null;
-  rec.assignedDoctor = assignedDoctor;
-  rec.status = "APPROVED";
-  rec.updatedAt = new Date();
-
-  rec.auditLogs.push({
-    id: crypto.randomUUID(),
-    actorId: clinicianId,
-    actorRole: "CLINICIAN",
-    action: "ONBOARDING_APPROVED",
-    metadata: {
-      assignedDoctor,
-      onboardingTokenHashPrefix: tokenHash.slice(0, 12) + "...",
-      expiresAt: expiresAt.toISOString(),
-    },
-    ipAddress,
-    createdAt: new Date(),
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "PatientVault" WHERE id = ${patientId}::uuid FOR UPDATE`;
+    const record = await tx.patientVault.findUnique({
+      where: { id: patientId },
+    });
+    if (!record) return null;
+    const triage = record.aiTriageJson
+      ? AiTriageOutputSchema.parse(record.aiTriageJson)
+      : null;
+    if (
+      record.status === "EMERGENCY_HALTED" ||
+      triage?.urgency_level === "CRITICAL"
+    )
+      throw new WorkflowError(
+        "Emergency cases cannot enter self-scheduling onboarding",
+      );
+    if (
+      record.status === "APPROVED" &&
+      record.notificationMode === "GMAIL_SENT" &&
+      record.tokenExpiresAt &&
+      record.tokenExpiresAt > new Date()
+    )
+      throw new WorkflowError(
+        "The active invitation has already been emailed. Use the delivered link.",
+      );
+    if (
+      record.status === "APPROVED" &&
+      record.encryptedOnboardingToken &&
+      record.tokenExpiresAt &&
+      record.tokenExpiresAt > new Date()
+    ) {
+      const rawToken = decryptPhi(record.encryptedOnboardingToken);
+      return {
+        rawToken,
+        tokenHash: record.onboardingTokenHash!,
+        expiresAt: record.tokenExpiresAt,
+        magicLinkUrl: `${appUrl()}/onboarding/${rawToken}`,
+        record,
+      };
+    }
+    if (
+      ![
+        "CRM_SYNCED",
+        "AI_TRIAGED",
+        "TRIAGE_FAILED_MANUAL_REVIEW",
+        "APPROVED",
+      ].includes(record.status)
+    )
+      throw new WorkflowError("This intake is not ready for approval");
+    const { rawToken, tokenHash, expiresAt } = generateCapabilityToken();
+    const updated = await tx.patientVault.update({
+      where: { id: patientId },
+      data: {
+        onboardingTokenHash: tokenHash,
+        encryptedOnboardingToken: encryptPhi(rawToken),
+        tokenExpiresAt: expiresAt,
+        tokenUsedAt: null,
+        notificationMode: null,
+        assignedDoctor,
+        status: "APPROVED",
+      },
+    });
+    await audit(
+      tx,
+      patientId,
+      "ONBOARDING_APPROVED",
+      clinicianId,
+      "CLINICIAN",
+      {},
+      ipAddress,
+    );
+    await enqueueDelivery(
+      tx,
+      patientId,
+      "ONBOARDING_DISPATCH",
+      { patient_uuid: patientId, idempotency_key: `approve:${tokenHash}` },
+      `approve:${tokenHash}`,
+    );
+    return {
+      rawToken,
+      tokenHash,
+      expiresAt,
+      magicLinkUrl: `${appUrl()}/onboarding/${rawToken}`,
+      record: updated,
+    };
   });
-
-  // Trigger Blind Notification Dispatch (ADR-001)
-  const pii = JSON.parse(decryptPhi(rec.encryptedPiiJson)) as {
-    email: string;
-    phone: string;
-  };
-  const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const magicLinkUrl = `${appBaseUrl}/onboarding/${rawToken}`;
-  const maskedEmail = pii.email.replace(/^(..).*(@.*)$/, "$1***$2");
-
-  rec.blindNotificationDebug = {
-    channel: "EMAIL + SMS (Blind Vault Dispatch via /api/internal/notify)",
-    recipientMasked: `${maskedEmail} | ${pii.phone.slice(0, 4)}***${pii.phone.slice(-2)}`,
-    magicLinkUrl,
-    dispatchedAt: new Date().toISOString(),
-  };
-
-  rec.auditLogs.push({
-    id: crypto.randomUUID(),
-    actorId: "NEXTJS_BLIND_NOTIFIER",
-    actorRole: "N8N_SYSTEM",
-    action: "BLIND_NOTIFY_SENT",
-    metadata: {
-      recipientMasked: maskedEmail,
-      zeroPhiBody: true,
-      hubspotDealStage: "Approved - Onboarding Sent",
-    },
-    ipAddress,
-    createdAt: new Date(Date.now() + 5),
-  });
-
-  return {
-    rawToken,
-    tokenHash,
-    expiresAt,
-    magicLinkUrl,
-    record: rec,
-  };
 }
-
-/**
- * Completes the 3-step patient onboarding portal, burns the single-use capability token (tokenUsedAt = now()),
- * and transitions HubSpot Contact -> customer and Deal -> Closed Won (FR-4.1..4.5, ADR-007).
- */
-export function completePatientOnboarding(params: {
+export async function completePatientOnboarding(params: {
   rawToken: string;
   kycIdType: string;
   kycCardNumberLast4: string;
@@ -809,78 +411,138 @@ export function completePatientOnboarding(params: {
   ipAddress?: string;
 }) {
   const tokenHash = sha256Hash(params.rawToken);
-  const rec = getVaultRecordByTokenHash(tokenHash);
-
-  if (!rec) {
-    return { error: "Invalid or unknown onboarding token", code: 404 as const };
-  }
-  if (rec.tokenUsedAt) {
-    return {
-      error: "Capability token has already been used and burned",
-      code: 410 as const,
-      alreadyCompleted: true,
-      record: rec,
-    };
-  }
-  if (rec.tokenExpiresAt && rec.tokenExpiresAt.getTime() < Date.now()) {
-    return { error: "Onboarding token has expired (>48h)", code: 410 as const };
-  }
-
-  const now = new Date();
-  const ip = params.ipAddress ?? "127.0.0.1";
-
-  rec.encryptedKycJson = encryptPhi(
-    JSON.stringify({
-      kycIdType: params.kycIdType,
-      kycCardNumberLast4: params.kycCardNumberLast4,
-      verifiedAt: now.toISOString(),
-    })
-  );
-  rec.tokenUsedAt = now; // Burn single-use token (ADR-007)
-  rec.appointmentSlot = new Date(params.appointmentSlotIso);
-  rec.status = "ONBOARDED";
-  rec.updatedAt = now;
-
-  rec.consents.push({
-    id: crypto.randomUUID(),
-    consentType: "TELEHEALTH_NPP",
-    signatureText: params.nppSignatureText,
-    ipAddress: ip,
-    policyVersion: "TELEHEALTH-NPP-2026.1",
-    createdAt: now,
+  return prisma.$transaction(async (tx) => {
+    const records = await tx.$queryRaw<
+      Array<{ id: string }>
+    >`SELECT id FROM "PatientVault" WHERE "onboardingTokenHash" = ${tokenHash} FOR UPDATE`;
+    const record = records[0]
+      ? await tx.patientVault.findUnique({ where: { id: records[0].id } })
+      : null;
+    if (!record)
+      return {
+        error: "Invalid or unknown onboarding token",
+        code: 404 as const,
+      };
+    if (record.tokenUsedAt)
+      return {
+        error: "Capability token already used",
+        code: 410 as const,
+        alreadyCompleted: true,
+        record,
+      };
+    if (!record.tokenExpiresAt || record.tokenExpiresAt <= new Date())
+      return { error: "Onboarding link expired", code: 410 as const };
+    const triage = AiTriageOutputSchema.safeParse(record.aiTriageJson);
+    if (
+      record.status !== "APPROVED" ||
+      triage.data?.urgency_level === "CRITICAL"
+    )
+      return {
+        error: "Intake is not eligible for onboarding",
+        code: 409 as const,
+      };
+    const slot = new Date(params.appointmentSlotIso);
+    if (!Number.isFinite(slot.getTime()) || slot <= new Date())
+      return { error: "Select a valid future appointment", code: 422 as const };
+    const updated = await tx.patientVault.update({
+      where: { id: record.id },
+      data: {
+        encryptedKycJson: encryptPhi(
+          JSON.stringify({
+            kycIdType: params.kycIdType,
+            kycCardNumberLast4: params.kycCardNumberLast4,
+          }),
+        ),
+        tokenUsedAt: new Date(),
+        encryptedOnboardingToken: null,
+        appointmentSlot: slot,
+        status: "ONBOARDED",
+      },
+    });
+    await tx.consentRecord.create({
+      data: {
+        patientId: record.id,
+        consentType: "TELEHEALTH_NPP",
+        signatureText: encryptPhi(params.nppSignatureText),
+        ipAddress: params.ipAddress ?? "127.0.0.1",
+        userAgent: "Onboarding Portal",
+        policyVersion: "TELEHEALTH-NPP-2026.1",
+      },
+    });
+    await audit(
+      tx,
+      record.id,
+      "KYC_VERIFIED",
+      `patient_${record.id}`,
+      "PATIENT",
+    );
+    await audit(
+      tx,
+      record.id,
+      "ONBOARDING_COMPLETED",
+      `patient_${record.id}`,
+      "PATIENT",
+      { tokenBurned: true },
+      params.ipAddress,
+    );
+    await enqueueDelivery(tx, record.id, "ONBOARDING_COMPLETE", {
+      patient_uuid: record.id,
+      idempotency_key: `complete:${record.id}`,
+    });
+    return { code: 200 as const, record: updated };
   });
-
-  rec.auditLogs.push(
-    {
-      id: crypto.randomUUID(),
-      actorId: `patient_${rec.id.slice(0, 6)}`,
-      actorRole: "PATIENT",
-      action: "KYC_VERIFIED",
-      metadata: {
-        kycIdType: params.kycIdType,
-        encryptedAtRest: true,
+}
+export async function retryPatientDispatch(patientId: string) {
+  await prisma.$transaction(async (tx) => {
+    const record = await tx.patientVault.findUnique({
+      where: { id: patientId },
+    });
+    if (!record) throw new WorkflowError("Record not found", 404);
+    if (
+      !["WEBHOOK_RETRY_PENDING", "TRIAGE_FAILED_MANUAL_REVIEW"].includes(
+        record.status,
+      )
+    )
+      throw new WorkflowError("No failed triage dispatch to retry");
+    await tx.outboxDelivery.updateMany({
+      where: { patientId, stage: "TRIAGE" },
+      data: {
+        status: "PENDING",
+        leaseUntil: null,
+        availableAt: new Date(),
+        attempts: 0,
       },
-      ipAddress: ip,
-      createdAt: now,
-    },
-    {
-      id: crypto.randomUUID(),
-      actorId: `patient_${rec.id.slice(0, 6)}`,
-      actorRole: "PATIENT",
-      action: "ONBOARDING_COMPLETED",
-      metadata: {
-        tokenBurnedAt: now.toISOString(),
-        appointmentSlot: params.appointmentSlotIso,
-        hubspotDealStage: "Closed Won - Appointment Booked",
-        hubspotContactLifecycle: "customer",
-      },
-      ipAddress: ip,
-      createdAt: new Date(now.getTime() + 5),
-    }
+    });
+    await tx.patientVault.update({
+      where: { id: patientId },
+      data: { status: "SCRUBBED_DISPATCHED", lastError: null },
+    });
+    await audit(
+      tx,
+      patientId,
+      "INTAKE_SUBMITTED",
+      "OUTBOX_RETRY",
+      "N8N_SYSTEM",
+      { retry: true },
+    );
+  });
+}
+export async function simulateTriage(
+  patientId: string,
+  insuranceProvider: string,
+) {
+  if (!isDemoMode() || process.env.DEMO_SIMULATE_N8N_IF_SLEEPING !== "true")
+    throw new Error("Simulation is disabled");
+  const record = await getVaultRecord(patientId);
+  if (!record) return;
+  const triage = runDeterministicTriageAnalysis(
+    record.scrubbedSymptoms,
+    insuranceProvider,
   );
-
-  return {
-    code: 200 as const,
-    record: rec,
-  };
+  await applyN8nTriageCallback({
+    patient_uuid: patientId,
+    ai_triage: triage,
+    status: "AI_TRIAGED",
+    execution_mode: "SIMULATED_N8N_FALLBACK",
+  });
 }

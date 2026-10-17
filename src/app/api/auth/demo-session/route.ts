@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isDemoMode } from "@/lib/config";
 import {
   CLINICIAN_COOKIE_NAME,
   DEMO_CLINICIAN_PROFILE,
@@ -6,6 +7,7 @@ import {
 } from "@/lib/auth";
 
 export async function POST() {
+  if (!isDemoMode()) return NextResponse.json({ error: "Demo sessions are disabled" }, { status: 403 });
   const token = await mintClinicianToken(DEMO_CLINICIAN_PROFILE);
 
   const response = NextResponse.json({
@@ -19,6 +21,7 @@ export async function POST() {
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60,
+    secure: process.env.NEXT_PUBLIC_APP_URL?.startsWith("https://") ?? false,
   });
 
   return response;

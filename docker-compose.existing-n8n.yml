@@ -1,0 +1,8 @@
+# Use with docker-compose.yml and docker-compose.production.yml when n8n
+# already runs on the Docker host at port 5678. Start app and postgres only.
+services:
+  app:
+    environment:
+      N8N_TRIAGE_WEBHOOK_URL: http://host.docker.internal:5678/webhook/aegis-triage
+      N8N_ONBOARDING_DISPATCH_WEBHOOK_URL: http://host.docker.internal:5678/webhook/aegis-onboarding-dispatch
+      N8N_ONBOARDING_COMPLETE_WEBHOOK_URL: http://host.docker.internal:5678/webhook/aegis-onboarding-complete

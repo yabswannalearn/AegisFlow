@@ -1,54 +1,41 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
     container_name: aegisflow-postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
+    ports: ["127.0.0.1:5434:5432"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aegis}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis_local_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-aegis}
-    volumes:
-      - aegis_pgdata:/var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: ["aegis_pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aegis} -d ${POSTGRES_DB:-aegis}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
   n8n:
-    image: n8nio/n8n:latest
+    image: docker.n8n.io/n8nio/n8n:2.29.10
     container_name: aegisflow-n8n
     restart: unless-stopped
-    ports:
-      - "5678:5678"
+    ports: ["127.0.0.1:5679:5678"]
     environment:
-      - N8N_HOST=localhost
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - NODE_ENV=production
-      - WEBHOOK_URL=http://localhost:5678/
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-aegis-local-dev-n8n-encryption-key-32b}
-      # Zero-PHI Execution Log Persistence Guardrails (PRD Section 5 / ADR-001)
-      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=none
-      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
-      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=false
-      - EXECUTIONS_DATA_PRUNE=true
-      - EXECUTIONS_DATA_MAX_AGE=24
-      # Shared Secrets for HMAC Webhook Verification & Tool Calling
-      - AEGIS_WEBHOOK_SECRET=${AEGIS_WEBHOOK_SECRET:-aegis-dev-hmac-webhook-secret-key-2026}
-      - AEGIS_TOOL_API_KEY=${AEGIS_TOOL_API_KEY:-aegis-dev-internal-tool-api-key-2026}
-      - NEXTJS_INTERNAL_URL=http://host.docker.internal:3000
-    volumes:
-      - aegis_n8ndata:/home/node/.n8n
-      - ./n8n/workflows:/home/node/workflows:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5679/
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      AEGIS_WEBHOOK_SECRET: ${AEGIS_WEBHOOK_SECRET}
+      AEGIS_TOOL_API_KEY: ${AEGIS_TOOL_API_KEY}
+      NEXTJS_INTERNAL_URL: http://host.docker.internal:3005
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: none
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+    volumes: ["aegis_n8ndata:/home/node/.n8n", "./n8n/workflows:/home/node/workflows:ro"]
 volumes:
   aegis_pgdata:
   aegis_n8ndata:
