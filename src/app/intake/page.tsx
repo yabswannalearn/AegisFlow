@@ -1,9 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import {
+  WorkspaceHeader,
+  Journey,
+  Field,
+  StatusBadge,
+  WorkspaceFooter,
+} from "@/components/workspace-ui";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
   ShieldCheck,
   Eye,
   EyeOff,
@@ -24,6 +31,15 @@ interface TelemetrySnapshot {
   patientId: string;
   status: string;
   lastError: string | null;
+  executionMode: string;
+  deliveries: Array<{
+    stage: string;
+    status: string;
+    attempts: number;
+    lastError: string | null;
+  }>;
+  crmSyncStage: string | null;
+  notificationMode: string | null;
   stage1_redaction: {
     scrubbedSymptoms: string;
     redactedSpans: Array<{
@@ -179,6 +195,9 @@ const PRESET_SCENARIOS: PresetScenario[] = [
 export default function IntakeAndXRayWorkspace() {
   const router = useRouter();
   const [xrayEnabled, setXrayEnabled] = useState(true);
+  const [activeScenario, setActiveScenario] = useState(
+    PRESET_SCENARIOS[0].label,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
@@ -193,10 +212,10 @@ export default function IntakeAndXRayWorkspace() {
   >(PRESET_SCENARIOS[0].insuranceProvider);
   const [memberId, setMemberId] = useState(PRESET_SCENARIOS[0].memberId);
   const [groupNumber, setGroupNumber] = useState(
-    PRESET_SCENARIOS[0].groupNumber
+    PRESET_SCENARIOS[0].groupNumber,
   );
   const [rawSymptoms, setRawSymptoms] = useState(
-    PRESET_SCENARIOS[0].rawSymptoms
+    PRESET_SCENARIOS[0].rawSymptoms,
   );
   const [hipaaAccepted, setHipaaAccepted] = useState(true);
   const [tcpaSmsAccepted, setTcpaSmsAccepted] = useState(true);
@@ -209,6 +228,11 @@ export default function IntakeAndXRayWorkspace() {
   const [mintingClinician, setMintingClinician] = useState(false);
 
   const applyPreset = (preset: PresetScenario) => {
+    setActiveScenario(preset.label);
+    setActivePatientId(null);
+    setTelemetry(null);
+    setIdempotencyKey(null);
+    setDeduplicatedHit(false);
     setFirstName(preset.firstName);
     setLastName(preset.lastName);
     setEmail(preset.email);
@@ -283,7 +307,7 @@ export default function IntakeAndXRayWorkspace() {
       await fetchTelemetry(data.patientId);
     } catch (err) {
       setErrorBanner(
-        err instanceof Error ? err.message : "Unexpected submission error"
+        err instanceof Error ? err.message : "Unexpected submission error",
       );
     } finally {
       setSubmitting(false);
@@ -311,670 +335,578 @@ export default function IntakeAndXRayWorkspace() {
     telemetry?.status === "EMERGENCY_HALTED" ||
     telemetry?.stage4_aiAndHubspot.aiTriage?.urgency_level === "CRITICAL";
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* Top Navigation & X-Ray Toggle Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500/15 border border-teal-500/40 text-teal-400">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold tracking-tight text-white text-lg">
-                  AegisFlow
-                </span>
-                <span className="rounded bg-teal-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-teal-300 border border-teal-500/30">
-                  HIPAA Vault + Stateless n8n + HubSpot
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Zero-PHI Pseudonymous CRM Pipeline &bull; AES-256-GCM Envelope
-                Encryption &bull; Contextual + 6-Pass PII Scrubber
-              </p>
-            </div>
-          </div>
+  const triage = telemetry?.stage4_aiAndHubspot.aiTriage;
+  const workflowStep =
+    telemetry?.status === "ONBOARDED"
+      ? 3
+      : telemetry?.status === "APPROVED" || triage
+        ? 2
+        : activePatientId
+          ? 1
+          : 0;
 
-          <div className="flex items-center gap-3">
+  return (
+    <div className="af-app">
+      <WorkspaceHeader
+        actions={
+          <>
             <button
               type="button"
+              className="af-button af-button-quiet"
+              aria-label="Workflow inspector"
               onClick={() => setXrayEnabled((v) => !v)}
-              className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
-                xrayEnabled
-                  ? "border-teal-500 bg-teal-500/15 text-teal-300 shadow-sm shadow-teal-500/10"
-                  : "border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
-              }`}
+              aria-pressed={xrayEnabled}
             >
-              {xrayEnabled ? (
-                <Eye className="h-4 w-4 text-teal-400" />
-              ) : (
-                <EyeOff className="h-4 w-4" />
-              )}
-              Developer X-Ray Mode: {xrayEnabled ? "ACTIVE" : "HIDDEN"}
+              {xrayEnabled ? <Eye size={15} /> : <EyeOff size={15} />}
+              <span>Workflow inspector</span>
             </button>
-
-            {activePatientId && (
-              <button
-                type="button"
-                onClick={handleOpenClinicianVault}
-                disabled={mintingClinician}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
-              >
-                <UserCheck className="h-4 w-4" />
-                {mintingClinician
-                  ? "Signing in Dr. Chen..."
-                  : "Stage 3: Clinician HITL Vault"}
-              </button>
-            )}
+            <button
+              type="button"
+              className="af-button af-button-secondary"
+              aria-label="Clinician workspace"
+              title="Clinician workspace"
+              disabled={!activePatientId || mintingClinician}
+              onClick={handleOpenClinicianVault}
+            >
+              <UserCheck size={15} />
+              <span>Clinician workspace</span>
+              <ArrowRight size={13} />
+            </button>
+          </>
+        }
+      />
+      <main className="af-main">
+        <section className="af-hero">
+          <div>
+            <p className="af-eyebrow">
+              <span className="af-dot" /> Connected care, considered.
+            </p>
+            <h1>
+              Every intake.
+              <br />
+              <em>A clearer next step.</em>
+            </h1>
           </div>
-        </div>
-      </header>
-
-      {/* Emergency 911 Short-Circuit Banner (ADR-005) */}
-      {isCriticalEmergency && (
-        <div className="border-b border-red-500/60 bg-red-950/90 px-6 py-4">
-          <div className="mx-auto flex max-w-7xl items-start gap-3">
-            <AlertTriangle className="h-6 w-6 shrink-0 text-red-400 mt-0.5" />
+          <div className="af-hero-copy">
+            <p>
+              A private beginning. Intelligent routing. A human decision.
+              Explore a patient journey with every handoff in view.
+            </p>
+            <span className="af-powered">
+              <Sparkles size={13} /> Powered by Gemini · Reviewed by a clinician
+            </span>
+          </div>
+        </section>
+        <Journey current={workflowStep} />
+        {isCriticalEmergency && (
+          <div className="af-alert" role="alert">
+            <AlertTriangle size={21} />
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-red-200">
-                [RED ALERT — ADR-005 EMERGENCY CLINICAL SHORT-CIRCUIT ACTIVATED]
-              </h2>
-              <p className="mt-1 text-xs text-red-100">
-                The AI Triage Agent classified this presentation as{" "}
-                <strong>CRITICAL URGENCY</strong>. Automated self-scheduling
-                onboarding has been halted for patient safety. Please dial{" "}
-                <strong>911</strong> or proceed to the nearest Emergency
-                Department immediately. Clinic on-call Cardiology has been
-                paged via high-priority webhook.
-              </p>
+              <strong>Emergency symptoms require immediate care.</strong>Call
+              911 or your local emergency service. Self-scheduling is paused for
+              this case.
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Main Split-Screen Container */}
-      <main
-        className={`mx-auto max-w-7xl px-6 py-8 grid gap-8 ${
-          xrayEnabled ? "lg:grid-cols-12" : "max-w-3xl grid-cols-1"
-        }`}
-      >
-        {/* LEFT COLUMN: Patient Intake Portal (Module 1) */}
-        <section className={xrayEnabled ? "lg:col-span-5" : "col-span-1"}>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+        )}
+        {errorBanner && (
+          <div className="af-alert" role="alert">
+            <AlertTriangle size={18} />
+            <div>
+              <strong>We couldn’t submit this intake.</strong>
+              {errorBanner} Please check the details and try again.
+            </div>
+          </div>
+        )}
+        <div className={`af-workspace ${xrayEnabled ? "" : "is-focused"}`}>
+          <section className="af-card">
+            <div className="af-card-head">
               <div>
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-                  Stage 1 // Patient Intake Portal
-                </span>
-                <h1 className="text-lg font-bold text-white mt-0.5">
-                  HIPAA-Compliant Telehealth Intake
-                </h1>
+                <h2>Let’s start with the details</h2>
+                <p className="af-card-subtitle">
+                  A synthetic patient. A real workflow.
+                </p>
               </div>
-              <Lock className="h-5 w-5 text-teal-400" />
+              <span className="af-card-icon">
+                <Lock size={16} />
+              </span>
             </div>
-
-            {/* Scenario Presets for Recruiters */}
-            <div className="mt-4">
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-slate-400 mb-2">
-                <Sparkles className="inline h-3.5 w-3.5 text-teal-400 mr-1" />
-                One-Click Recruiter Test Presets:
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {PRESET_SCENARIOS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => applyPreset(preset)}
-                    className="flex flex-col items-start rounded-lg border border-slate-800 bg-slate-950/80 p-2.5 text-left transition hover:border-teal-500/50 hover:bg-slate-900"
-                  >
-                    <span className="text-xs font-semibold text-slate-200">
-                      {preset.label}
-                    </span>
-                    <span className="mt-0.5 font-mono text-[10px] text-teal-400">
-                      {preset.badge}
-                    </span>
-                  </button>
-                ))}
+            <div className="af-scenarios">
+              <p className="af-section-label">
+                <Sparkles size={11} /> Choose a demo scenario
+              </p>
+              <div className="af-scenario-grid">
+                {PRESET_SCENARIOS.map((preset, i) => {
+                  const Icon = [
+                    UserCheck,
+                    CheckCircle2,
+                    AlertTriangle,
+                    ShieldCheck,
+                  ][i];
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      className={`af-scenario ${activeScenario === preset.label ? "is-selected" : ""}`}
+                      aria-pressed={activeScenario === preset.label}
+                      onClick={() => applyPreset(preset)}
+                    >
+                      <span className="af-scenario-icon">
+                        <Icon size={13} />
+                      </span>
+                      <span>
+                        <strong>{preset.label.replace(/^\d+\.\s*/, "")}</strong>
+                        <small>{preset.badge.replace(" // ", " · ")}</small>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-
-            {errorBanner && (
-              <div className="mt-4 rounded-lg border border-red-500/40 bg-red-950/50 p-3 text-xs text-red-200">
-                {errorBanner}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    First Name (PHI)
-                  </label>
+            <form className="af-card-body" onSubmit={handleSubmit}>
+              <div className="af-form-grid">
+                <Field label="First name">
                   <input
-                    type="text"
+                    className="af-input"
+                    aria-label="First name"
                     required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Last Name (PHI)
-                  </label>
+                </Field>
+                <Field label="Last name">
                   <input
-                    type="text"
+                    className="af-input"
+                    aria-label="Last name"
                     required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Email Address (PHI)
-                  </label>
+                </Field>
+                <Field label="Email address">
                   <input
+                    className="af-input"
                     type="email"
+                    aria-label="Email address"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Phone Number (PHI)
-                  </label>
+                </Field>
+                <Field label="Phone number">
                   <input
-                    type="text"
+                    className="af-input"
+                    type="tel"
+                    aria-label="Phone number"
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Date of Birth
-                  </label>
+                </Field>
+                <Field label="Date of birth">
                   <input
-                    type="text"
+                    className="af-input"
+                    type="date"
+                    aria-label="Date of birth"
                     required
                     value={dob}
                     onChange={(e) => setDob(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Insurance Payer
-                  </label>
+                </Field>
+                <Field label="Insurance provider">
                   <select
+                    className="af-input"
+                    aria-label="Insurance provider"
                     value={insuranceProvider}
                     onChange={(e) =>
                       setInsuranceProvider(
-                        e.target.value as PresetScenario["insuranceProvider"]
+                        e.target.value as PresetScenario["insuranceProvider"],
                       )
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   >
-                    <option value="Aetna_PPO">Aetna PPO</option>
-                    <option value="BlueCross_BlueShield">
-                      BlueCross BlueShield
-                    </option>
-                    <option value="UnitedHealthcare">UnitedHealthcare</option>
-                    <option value="Cigna_Health">Cigna Health</option>
-                    <option value="Kaiser_Permanente">Kaiser Permanente</option>
-                    <option value="Self_Pay_Uninsured">
-                      Self-Pay / Uninsured
-                    </option>
+                    {[
+                      "Aetna_PPO",
+                      "BlueCross_BlueShield",
+                      "UnitedHealthcare",
+                      "Cigna_Health",
+                      "Kaiser_Permanente",
+                      "Self_Pay_Uninsured",
+                    ].map((p) => (
+                      <option key={p} value={p}>
+                        {p.replaceAll("_", " ")}
+                      </option>
+                    ))}
                   </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-300">
-                    Member ID (PHI)
-                  </label>
+                </Field>
+                <Field label="Member ID">
                   <input
-                    type="text"
+                    className="af-input"
+                    aria-label="Member ID"
                     required
                     value={memberId}
                     onChange={(e) => setMemberId(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-teal-500 focus:outline-none"
                   />
-                </div>
+                </Field>
+                <Field label="Group number">
+                  <input
+                    className="af-input"
+                    aria-label="Group number"
+                    value={groupNumber}
+                    onChange={(e) => setGroupNumber(e.target.value)}
+                  />
+                </Field>
+                <Field label="Symptoms & history" className="af-field-full">
+                  <textarea
+                    className="af-input"
+                    aria-label="Symptoms and history"
+                    required
+                    minLength={10}
+                    maxLength={10000}
+                    value={rawSymptoms}
+                    onChange={(e) => setRawSymptoms(e.target.value)}
+                  />
+                  <p className="af-field-help">
+                    The examples include fictional identifiers so you can see
+                    the privacy controls at work.
+                  </p>
+                </Field>
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300">
-                  Clinical Symptoms &amp; Medical History (Unstructured Text)
-                </label>
-                <textarea
-                  rows={4}
+              <hr className="af-form-divider" />
+              <label className="af-checkbox">
+                <input
+                  type="checkbox"
+                  checked={hipaaAccepted}
+                  onChange={(e) => setHipaaAccepted(e.target.checked)}
                   required
-                  value={rawSymptoms}
-                  onChange={(e) => setRawSymptoms(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 text-xs text-white leading-relaxed focus:border-teal-500 focus:outline-none"
                 />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Includes embedded PII/PHI to demonstrate Contextual + 6-Pass
-                  Regex Redaction prior to n8n/LLM ingestion.
-                </p>
-              </div>
-
-              {/* Compliance Gate Checkboxes */}
-              <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3.5 text-xs">
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={hipaaAccepted}
-                    onChange={(e) => setHipaaAccepted(e.target.checked)}
-                    className="mt-0.5 rounded border-slate-600 bg-slate-900 text-teal-500"
-                  />
-                  <span className="text-slate-300">
-                    <strong>HIPAA Authorization:</strong> I authorize AegisFlow
-                    to encrypt my Protected Health Information (PHI) in the
-                    Next.js Vault and process anonymized clinical data for
-                    triage.
-                  </span>
-                </label>
-
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={tcpaSmsAccepted}
-                    onChange={(e) => setTcpaSmsAccepted(e.target.checked)}
-                    className="mt-0.5 rounded border-slate-600 bg-slate-900 text-teal-500"
-                  />
-                  <span className="text-slate-300">
-                    <strong>TCPA SMS &amp; Email Opt-In:</strong> I consent to
-                    receive blind-dispatched onboarding links via SMS/Email
-                    (zero medical details in message body).
-                  </span>
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white shadow-lg shadow-teal-600/20 transition hover:bg-teal-500 disabled:opacity-50"
-              >
-                {submitting ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    Encrypting Vault &amp; Dispatching Signed Webhook...
-                  </>
-                ) : (
-                  <>
-                    Submit Compliant Intake (Async 202 Accepted)
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </section>
-
-        {/* RIGHT COLUMN: 4-Stage Split-Screen "Developer X-Ray" Telemetry Inspector (Module 5) */}
-        {xrayEnabled && (
-          <section className="lg:col-span-7 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-teal-500/30 bg-teal-950/20 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <FileCode2 className="h-4 w-4 text-teal-400" />
-                <span className="font-mono text-xs font-bold uppercase tracking-wider text-teal-300">
-                  Live 4-Stage &ldquo;Compliance X-Ray&rdquo; Telemetry
-                  Inspector
+                <span>
+                  I’m using synthetic details to try encrypted intake and AI
+                  routing.
                 </span>
-              </div>
-              {telemetry ? (
-                <div className="flex items-center gap-2">
-                  {deduplicatedHit && (
-                    <span className="rounded bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 font-mono text-[10px] text-amber-300">
-                      ADR-007 Idempotent Deduplication Hit
-                    </span>
+              </label>
+              <label className="af-checkbox">
+                <input
+                  type="checkbox"
+                  checked={tcpaSmsAccepted}
+                  onChange={(e) => setTcpaSmsAccepted(e.target.checked)}
+                  required
+                />
+                <span>
+                  I understand invitations appear on screen. Email tests use a
+                  controlled inbox.
+                </span>
+              </label>
+              <div className="af-form-submit">
+                <button
+                  type="submit"
+                  className="af-button af-button-primary af-button-wide"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <RefreshCw className="animate-spin" size={15} /> Securing
+                      your intake…
+                    </>
+                  ) : (
+                    <>
+                      Submit Demo Intake <ArrowRight size={15} />
+                    </>
                   )}
-                  <span className="rounded bg-slate-900 border border-slate-700 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-teal-300">
-                    Vault Status: {telemetry.status}
-                  </span>
-                </div>
-              ) : (
-                <span className="font-mono text-[11px] text-slate-400">
-                  Submit the intake form on the left to inspect live encryption
-                  &amp; n8n webhooks
-                </span>
-              )}
-            </div>
-
-            {!telemetry ? (
-              <div className="rounded-xl border border-dashed border-slate-800 bg-slate-900/40 p-12 text-center">
-                <BrainCircuit className="mx-auto h-10 w-10 text-slate-600" />
-                <h3 className="mt-3 text-sm font-semibold text-slate-300">
-                  Waiting for Patient Intake Submission
-                </h3>
-                <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-                  Select any of the 4 test presets on the left and click{" "}
-                  <strong>Submit Compliant Intake</strong> to watch PII
-                  scrubbing, AES-256-GCM encryption, HMAC webhook signing, and
-                  AI Triage execute in real time.
+                </button>
+                <p className="af-under-button">
+                  <Lock size={10} /> Encrypted before storage. Reviewed before
+                  onboarding.
                 </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4">
-                {/* PANEL 1: Contextual + 6-Pass Regex PII Scrubber Diff */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-rose-300">
-                        PANEL 01 // ADR-002
-                      </span>
-                      <h3 className="text-xs font-bold text-white">
-                        Contextual Known-Entity + 6-Pass Regex PII Redaction
-                      </h3>
-                    </div>
-                    <span className="font-mono text-[11px] text-rose-400 font-semibold">
-                      {telemetry.stage1_redaction.redactionCount} PII/PHI Tokens
-                      Stripped
-                    </span>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {telemetry.stage1_redaction.redactedSpans.map((span, i) => (
-                      <span
-                        key={i}
-                        className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-950/40 px-2 py-0.5 font-mono text-[10px]"
-                      >
-                        <span className="line-through text-rose-300">
-                          {span.original}
+              {deduplicatedHit && (
+                <p
+                  className="af-field-help"
+                  role="status"
+                  style={{ marginTop: 12 }}
+                >
+                  You’ve already submitted this case. Its original workflow is
+                  shown alongside.
+                </p>
+              )}
+            </form>
+          </section>
+          {xrayEnabled && (
+            <aside className="af-inspector" id="workflow">
+              <div className="af-inspector-title">
+                <h2>
+                  <Activity size={15} /> Behind the handoff
+                </h2>
+                <small>Live workflow inspector</small>
+              </div>
+              {!telemetry ? (
+                <div className="af-card af-empty">
+                  <span className="af-empty-top">Clarity at every stage</span>
+                  <h3>
+                    A patient journey,
+                    <br />
+                    with nothing hidden.
+                  </h3>
+                  <p>
+                    Choose a scenario and submit the intake. Watch each handoff
+                    unfold here, from private details to the next appointment.
+                  </p>
+                  <div className="af-trace">
+                    {[
+                      {
+                        Icon: Lock,
+                        title: "Identity stays in the vault",
+                        text: "Patient fields are encrypted before storage.",
+                      },
+                      {
+                        Icon: BrainCircuit,
+                        title: "Gemini helps find the right route",
+                        text: "Guided tools inform a structured recommendation.",
+                      },
+                      {
+                        Icon: UserCheck,
+                        title: "A clinician makes the call",
+                        text: "Every ordinary case waits for human approval.",
+                      },
+                      {
+                        Icon: CheckCircle2,
+                        title: "One invitation. One next step.",
+                        text: "Single-use onboarding connects the final handoff.",
+                      },
+                    ].map(({ Icon, title, text }) => (
+                      <div key={title} className="af-trace-step">
+                        <span>
+                          <Icon size={15} />
                         </span>
-                        <span className="text-slate-400">&rarr;</span>
-                        <span className="font-semibold text-teal-300">
-                          {span.replacement}
-                        </span>
-                      </span>
+                        <div>
+                          <strong>{title}</strong>
+                          <small>{text}</small>
+                        </div>
+                      </div>
                     ))}
                   </div>
-
-                  <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3 font-mono text-xs text-teal-300 leading-relaxed">
-                    {telemetry.stage1_redaction.scrubbedSymptoms}
-                  </div>
-                </div>
-
-                {/* PANEL 2: PostgreSQL PatientVault AES-256-GCM Ciphertext & Immutable AuditLog */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-teal-500/15 border border-teal-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-teal-300">
-                        PANEL 02 // VAULT &amp; AUDIT
-                      </span>
-                      <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Database className="h-3.5 w-3.5 text-teal-400" />
-                        PostgreSQL PatientVault (AES-256-GCM) &amp; Append-Only
-                        AuditLog
-                      </h3>
-                    </div>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      UUID: {telemetry.patientId.slice(0, 13)}...
+                  <div className="af-empty-note">
+                    <ShieldCheck size={14} />
+                    <span>
+                      This is an engineering demonstration. The examples, payer
+                      checks, clinician, and appointment slots are synthetic.
                     </span>
                   </div>
-
-                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2.5 font-mono text-[11px]">
-                    <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                      <span className="text-slate-400 block text-[10px]">
-                        encryptedPiiJson (v1:iv:authTag:ciphertext):
-                      </span>
-                      <p className="mt-1 truncate text-amber-300">
-                        {telemetry.stage2_vault.encryptedPiiJson}
-                      </p>
-                    </div>
-                    <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                      <span className="text-slate-400 block text-[10px]">
-                        emailHash (SHA-256) &amp; Idempotency Key:
-                      </span>
-                      <p className="mt-1 truncate text-sky-300">
-                        {telemetry.stage2_vault.emailHash}
-                      </p>
-                      {idempotencyKey && (
-                        <p className="truncate text-[10px] text-slate-400">
-                          Key: {idempotencyKey}
+                </div>
+              ) : (
+                <>
+                  <div className="af-runtime" aria-live="polite">
+                    <span>Vault Status: {telemetry.status}</span>
+                    <span>·</span>
+                    <span data-testid="execution-mode">
+                      {telemetry.executionMode}
+                    </span>
+                  </div>
+                  <section className="af-card">
+                    <div className="af-live-header">
+                      <div>
+                        <p className="af-eyebrow">
+                          <BrainCircuit size={12} /> Routing recommendation
                         </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Immutable Audit Stream */}
-                  <div className="mt-3">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
-                      Immutable AuditLog Stream (Trigger:{" "}
-                      <code>trg_audit_log_immutable</code>):
-                    </span>
-                    <div className="mt-1.5 max-h-32 overflow-y-auto space-y-1 rounded border border-slate-800 bg-slate-950 p-2 font-mono text-[11px]">
-                      {telemetry.stage2_vault.auditLogs.map((log) => (
-                        <div
-                          key={log.id}
-                          className="flex items-center justify-between gap-2 border-b border-slate-900 pb-1 last:border-none"
-                        >
-                          <span className="text-teal-400 font-semibold">
-                            [{log.action}]
-                          </span>
-                          <span className="text-slate-300 truncate">
-                            Actor: {log.actorId} ({log.actorRole})
-                          </span>
-                          <span className="text-slate-500 text-[10px]">
-                            {new Date(log.createdAt).toLocaleTimeString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* PANEL 3: Scrubbed n8n Webhook Payload & HMAC-SHA256 Signature */}
-                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-4">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-purple-500/15 border border-purple-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-purple-300">
-                        PANEL 03 // ADR-001 &amp; ADR-003
-                      </span>
-                      <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <Webhook className="h-3.5 w-3.5 text-purple-400" />
-                        Stateless n8n Webhook Payload (Zero-PHI Pseudonymous
-                        Alias)
-                      </h3>
-                    </div>
-                    {telemetry.status === "WEBHOOK_RETRY_PENDING" && (
-                      <button
-                        type="button"
-                        onClick={handleRetryOutbox}
-                        className="rounded bg-amber-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-amber-500"
-                      >
-                        Retry Outbox Dispatch
-                      </button>
-                    )}
-                  </div>
-
-                  {telemetry.stage3_n8nWebhook && (
-                    <div className="mt-3 space-y-2 font-mono text-[11px]">
-                      <div className="rounded border border-slate-800 bg-slate-950 p-2 text-[10px] text-slate-300">
-                        <div>
-                          <span className="text-purple-400">POST</span>{" "}
-                          {telemetry.stage3_n8nWebhook.url}
-                        </div>
-                        <div className="truncate text-slate-400">
-                          x-aegis-signature:{" "}
-                          <span className="text-emerald-400">
-                            {
-                              telemetry.stage3_n8nWebhook.headers[
-                                "x-aegis-signature"
-                              ]
-                            }
-                          </span>
-                        </div>
+                        <h3>
+                          {triage
+                            ? triage.recommended_specialty
+                            : "Your intake is on its way"}
+                        </h3>
                       </div>
-                      <pre className="max-h-40 overflow-auto rounded border border-slate-800 bg-slate-950 p-2.5 text-[10px] text-slate-200">
+                      <StatusBadge tone="blue">
+                        {triage ? "Clinician review required" : "Processing"}
+                      </StatusBadge>
+                    </div>
+                    {triage ? (
+                      <>
+                        <div className="af-result-grid">
+                          <div>
+                            <small>Urgency</small>
+                            <strong>{triage.urgency_level}</strong>
+                          </div>
+                          <div>
+                            <small>Demo copay</small>
+                            <strong>${triage.copay_estimate_usd}</strong>
+                          </div>
+                          <div>
+                            <small>Coverage tool</small>
+                            <strong>
+                              {triage.insurance_verified
+                                ? "Verified"
+                                : "Self-pay / review"}
+                            </strong>
+                          </div>
+                        </div>
+                        <p className="af-result-rationale">
+                          <strong>Why this route</strong>
+                          {triage.triage_rationale_redacted}
+                        </p>
+                        {triage.prompt_injection_blocked && (
+                          <div
+                            className="af-evidence"
+                            style={{ paddingTop: 0 }}
+                          >
+                            <StatusBadge tone="warning">
+                              Untrusted instructions detected
+                            </StatusBadge>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="af-skeleton">
+                        <RefreshCw size={16} className="animate-spin" /> Waiting
+                        for a structured routing result…
+                      </div>
+                    )}
+                  </section>
+                  <section className="af-card af-evidence">
+                    <h3 className="af-panel-heading">
+                      <ShieldCheck size={15} /> Privacy, before processing{" "}
+                      <span className="af-panel-number">01</span>
+                    </h3>
+                    <p>
+                      {telemetry.stage1_redaction.redactionCount} identifier
+                      matches removed before dispatch.
+                    </p>
+                    <pre className="af-code">
+                      {telemetry.stage1_redaction.scrubbedSymptoms}
+                    </pre>
+                    <details className="af-detail">
+                      <summary>Inspect redaction passes</summary>
+                      <pre className="af-code">
                         {JSON.stringify(
-                          telemetry.stage3_n8nWebhook.payload,
+                          telemetry.stage1_redaction.redactedSpans,
                           null,
-                          2
+                          2,
                         )}
                       </pre>
-                    </div>
-                  )}
-                </div>
-
-                {/* PANEL 4: AI Triage Structured Output & HubSpot Pipeline Card */}
-                <div className="rounded-xl border border-teal-500/40 bg-slate-900/95 p-4 shadow-lg">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
-                        PANEL 04 // AI TRIAGE &amp; HUBSPOT CRM
-                      </span>
-                      <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <BrainCircuit className="h-3.5 w-3.5 text-emerald-400" />
-                        AI Agent Output &amp; Live HubSpot Deal State
-                      </h3>
-                    </div>
-                    <span className="font-mono text-[11px] font-semibold text-emerald-400">
-                      {telemetry.stage4_aiAndHubspot.hubspotDealStage}
-                    </span>
-                  </div>
-
-                  {!telemetry.stage4_aiAndHubspot.aiTriage ? (
-                    <div className="py-6 text-center font-mono text-xs text-slate-400 flex items-center justify-center gap-2">
-                      <RefreshCw className="h-4 w-4 animate-spin text-teal-400" />
-                      Polling async n8n AI Agent + Insurance Eligibility HTTP
-                      Tool...
-                    </div>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      {telemetry.stage4_aiAndHubspot.aiTriage
-                        .prompt_injection_blocked && (
-                        <div className="rounded border border-amber-500/40 bg-amber-950/40 px-3 py-2 font-mono text-[11px] text-amber-200">
-                          🛡️ <strong>ADR-005 XML Sandbox Active:</strong>{" "}
-                          Imperative prompt-injection instructions inside{" "}
-                          <code>&lt;untrusted_symptom_text&gt;</code> were
-                          neutralized.
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                          <span className="text-[10px] text-slate-400 block">
-                            Urgency Level
-                          </span>
-                          <span
-                            className={`font-mono font-bold ${
-                              telemetry.stage4_aiAndHubspot.aiTriage
-                                .urgency_level === "CRITICAL"
-                                ? "text-red-400"
-                                : telemetry.stage4_aiAndHubspot.aiTriage
-                                      .urgency_level === "HIGH"
-                                  ? "text-amber-400"
-                                  : "text-emerald-400"
-                            }`}
-                          >
-                            {
-                              telemetry.stage4_aiAndHubspot.aiTriage
-                                .urgency_level
-                            }
-                          </span>
-                        </div>
-                        <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                          <span className="text-[10px] text-slate-400 block">
-                            Specialty Routing
-                          </span>
-                          <span className="font-semibold text-white">
-                            {
-                              telemetry.stage4_aiAndHubspot.aiTriage
-                                .recommended_specialty
-                            }
-                          </span>
-                        </div>
-                        <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                          <span className="text-[10px] text-slate-400 block">
-                            Insurance Tool Check
-                          </span>
-                          <span className="font-mono text-teal-300">
-                            {telemetry.stage4_aiAndHubspot.aiTriage
-                              .insurance_verified
-                              ? `Verified ($${telemetry.stage4_aiAndHubspot.aiTriage.copay_estimate_usd} Copay)`
-                              : "Self-Pay Track"}
-                          </span>
-                        </div>
-                        <div className="rounded border border-slate-800 bg-slate-950 p-2.5">
-                          <span className="text-[10px] text-slate-400 block">
-                            HubSpot CRM Alias
-                          </span>
-                          <span className="font-mono text-[11px] text-sky-300 truncate block">
-                            {telemetry.stage4_aiAndHubspot.crmAlias.firstName}
-                          </span>
-                        </div>
+                    </details>
+                  </section>
+                  <section className="af-card af-evidence">
+                    <h3 className="af-panel-heading">
+                      <Database size={15} /> A private, durable record{" "}
+                      <span className="af-panel-number">02</span>
+                    </h3>
+                    <div className="af-stat-pair">
+                      <div className="af-mini-stat">
+                        <span>VAULT ENCRYPTION</span>
+                        <strong>AES-256-GCM</strong>
                       </div>
-
-                      <div className="rounded border border-slate-800 bg-slate-950 p-3 text-xs text-slate-300">
-                        <span className="font-mono text-[10px] uppercase text-slate-400 block mb-1">
-                          Redacted Clinical Triage Rationale:
-                        </span>
-                        {
-                          telemetry.stage4_aiAndHubspot.aiTriage
-                            .triage_rationale_redacted
-                        }
-                      </div>
-
-                      {/* Next Step CTA: Clinician HITL Vault */}
-                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-500/40 bg-indigo-950/30 p-3">
-                        <div>
-                          <div className="text-xs font-bold text-indigo-200 flex items-center gap-1.5">
-                            <CheckCircle2 className="h-4 w-4 text-indigo-400" />
-                            HubSpot Deal{" "}
-                            <code>
-                              {telemetry.stage4_aiAndHubspot.hubspotDealId}
-                            </code>{" "}
-                            Created with Vault Pointer
-                          </div>
-                          <p className="text-[11px] text-slate-300">
-                            Click to sign in as{" "}
-                            <strong>Dr. Sarah Chen (Demo Clinician)</strong>,
-                            decrypt the Vault record, and trigger patient
-                            onboarding.
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleOpenClinicianVault}
-                            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-500"
-                          >
-                            Open Clinician Vault (Stage 3)
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </button>
-
-                          {telemetry.stage4_aiAndHubspot
-                            .rawOnboardingTokenForDemo && (
-                            <Link
-                              href={`/onboarding/${telemetry.stage4_aiAndHubspot.rawOnboardingTokenForDemo}`}
-                              className="rounded-lg border border-teal-500/50 bg-teal-500/15 px-3 py-2 text-xs font-bold text-teal-300 hover:bg-teal-500/25"
-                            >
-                              Patient Onboarding Link (Stage 4)
-                            </Link>
-                          )}
-                        </div>
+                      <div className="af-mini-stat">
+                        <span>AUDIT HISTORY</span>
+                        <strong>
+                          {telemetry.stage2_vault.auditLogs.length} recorded
+                          events
+                        </strong>
                       </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </section>
-        )}
+                    <details className="af-detail">
+                      <summary>Inspect encrypted storage</summary>
+                      <pre className="af-code af-code-dark">
+                        {telemetry.stage2_vault.encryptedPiiJson}
+                      </pre>
+                      <p>
+                        Patient {telemetry.patientId}
+                        <br />
+                        Idempotency key: {idempotencyKey}
+                      </p>
+                    </details>
+                    <ul className="af-audit">
+                      {telemetry.stage2_vault.auditLogs.slice(-4).map((log) => (
+                        <li key={log.id}>
+                          <span className="af-dot" />
+                          <span>{log.action.replaceAll("_", " ")}</span>
+                          <time>
+                            {new Date(log.createdAt).toLocaleTimeString(
+                              undefined,
+                              { hour: "2-digit", minute: "2-digit" },
+                            )}
+                          </time>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                  <section className="af-card af-evidence">
+                    <h3 className="af-panel-heading">
+                      <Webhook size={15} /> A signed handoff{" "}
+                      <span className="af-panel-number">03</span>
+                    </h3>
+                    <p>
+                      Only scrubbed text and pseudonymous references enter the
+                      workflow.
+                    </p>
+                    <details className="af-detail">
+                      <summary>Inspect n8n payload & delivery</summary>
+                      <pre className="af-code">
+                        {JSON.stringify(telemetry.stage3_n8nWebhook, null, 2)}
+                      </pre>
+                      <pre className="af-code">
+                        {JSON.stringify(telemetry.deliveries, null, 2)}
+                      </pre>
+                    </details>
+                    {[
+                      "WEBHOOK_RETRY_PENDING",
+                      "TRIAGE_FAILED_MANUAL_REVIEW",
+                    ].includes(telemetry.status) && (
+                      <div style={{ marginTop: 13 }}>
+                        <button
+                          className="af-button af-button-secondary"
+                          onClick={handleRetryOutbox}
+                        >
+                          <RefreshCw size={13} /> Retry workflow
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                  <section className="af-card af-evidence">
+                    <h3 className="af-panel-heading">
+                      <UserCheck size={15} /> Ready for the human handoff{" "}
+                      <span className="af-panel-number">04</span>
+                    </h3>
+                    <p>
+                      HubSpot sees a pseudonymous patient reference. The
+                      clinician reviews the full record inside the vault.
+                    </p>
+                    <div className="af-stat-pair">
+                      <div className="af-mini-stat">
+                        <span>HUBSPOT DEAL</span>
+                        <strong>
+                          {telemetry.stage4_aiAndHubspot.hubspotDealId ??
+                            "Synchronization pending"}
+                        </strong>
+                      </div>
+                      <div className="af-mini-stat">
+                        <span>CRM STAGE</span>
+                        <strong>{telemetry.crmSyncStage ?? "Pending"}</strong>
+                      </div>
+                    </div>
+                    <div className="af-crm-row">
+                      <div>
+                        <StatusBadge
+                          tone={telemetry.crmSyncStage ? "success" : "neutral"}
+                        >
+                          {telemetry.stage4_aiAndHubspot.crmAlias.firstName}
+                        </StatusBadge>
+                        <p>
+                          Email: {telemetry.notificationMode ?? "Not requested"}
+                        </p>
+                      </div>
+                      <button
+                        className="af-button af-button-primary"
+                        type="button"
+                        disabled={mintingClinician || !triage}
+                        onClick={handleOpenClinicianVault}
+                      >
+                        Open Clinician Vault <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </section>
+                </>
+              )}
+            </aside>
+          )}
+        </div>
       </main>
+      <WorkspaceFooter />
     </div>
   );
 }

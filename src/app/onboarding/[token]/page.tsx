@@ -4,6 +4,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
+  WorkspaceHeader,
+  Journey,
+  Field,
+  StatusBadge,
+  WorkspaceFooter,
+} from "@/components/workspace-ui";
+import {
+  ArrowRight,
   ShieldCheck,
   CheckCircle2,
   CreditCard,
@@ -33,20 +41,15 @@ interface TokenValidationResponse {
   hubspotContactId?: string | null;
 }
 
-const AVAILABLE_SLOTS = [
-  {
-    id: "2026-10-19T14:00:00.000Z",
-    label: "Monday, Oct 19 • 10:00 AM EDT (Telehealth Video)",
-  },
-  {
-    id: "2026-10-19T16:30:00.000Z",
-    label: "Monday, Oct 19 • 12:30 PM EDT (Telehealth Video)",
-  },
-  {
-    id: "2026-10-20T15:00:00.000Z",
-    label: "Tuesday, Oct 20 • 11:00 AM EDT (Priority Specialist Slot)",
-  },
-];
+const AVAILABLE_SLOTS = [1, 2, 3].map((offset) => {
+  const slot = new Date();
+  slot.setDate(slot.getDate() + offset);
+  slot.setUTCHours(14, 0, 0, 0);
+  return {
+    id: slot.toISOString(),
+    label: `${slot.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} (Demo telehealth slot)`,
+  };
+});
 
 export default function PatientOnboardingPage() {
   const params = useParams<{ token: string }>();
@@ -54,7 +57,7 @@ export default function PatientOnboardingPage() {
 
   const [loading, setLoading] = useState(true);
   const [tokenInfo, setTokenInfo] = useState<TokenValidationResponse | null>(
-    null
+    null,
   );
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -62,7 +65,7 @@ export default function PatientOnboardingPage() {
   const [kycCardNumberLast4, setKycCardNumberLast4] = useState("8944");
   const [nppSignatureText, setNppSignatureText] = useState("");
   const [appointmentSlotIso, setAppointmentSlotIso] = useState(
-    AVAILABLE_SLOTS[0].id
+    AVAILABLE_SLOTS[0].id,
   );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -105,8 +108,7 @@ export default function PatientOnboardingPage() {
         body: JSON.stringify({
           kycIdType,
           kycCardNumberLast4,
-          nppSignatureText:
-            nppSignatureText.trim() || "Patient Verified E-Signature",
+          nppSignatureText: nppSignatureText.trim(),
           appointmentSlotIso,
         }),
       });
@@ -123,403 +125,392 @@ export default function PatientOnboardingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to X-Ray Inspector
-            </Link>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-emerald-400" />
-              <span className="text-sm font-bold text-white">
-                AegisFlow Patient Onboarding Portal
-              </span>
-            </div>
-          </div>
-
-          {tokenInfo?.tokenHashPrefix && (
-            <span className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 font-mono text-[11px] text-slate-400">
-              SHA-256 Token: {tokenInfo.tokenHashPrefix}
-            </span>
-          )}
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-4xl px-6 py-10">
+    <div className="af-app">
+      <WorkspaceHeader
+        section="Patient onboarding"
+        actions={
+          <Link
+            href="/"
+            aria-label="Back to intake"
+            className="af-button af-button-quiet"
+          >
+            <ArrowLeft size={14} />
+            <span>Back to intake</span>
+          </Link>
+        }
+      />
+      <main className="af-main af-onboarding">
         {loading ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-12 text-center text-sm text-slate-400">
-            Verifying single-use 48-hour SHA-256 capability token...
+          <div className="af-card af-skeleton">
+            <Lock size={17} /> Checking your private invitation…
           </div>
         ) : !tokenInfo || (!tokenInfo.valid && !tokenInfo.burned) ? (
-          <div className="mx-auto max-w-lg rounded-2xl border border-red-500/40 bg-slate-900 p-8 text-center">
-            <AlertTriangle className="mx-auto h-8 w-8 text-red-400" />
-            <h1 className="mt-3 text-lg font-bold text-white">
-              Invalid or Expired Onboarding Link
-            </h1>
-            <p className="mt-1 text-xs text-slate-400">
-              {tokenInfo?.error ??
-                "This capability token does not exist or has expired past its 48-hour window."}
+          <section className="af-card af-centered">
+            <AlertTriangle size={34} />
+            <h1>This invitation is unavailable</h1>
+            <p>
+              {tokenInfo?.expired
+                ? "Your invitation has expired. Ask the demo clinician to create a new one."
+                : (tokenInfo?.error ??
+                  "This link is invalid. Start a new demo intake to try the complete journey.")}
             </p>
+            <Link className="af-button af-button-primary" href="/">
+              Return to intake <ArrowRight size={14} />
+            </Link>
+          </section>
+        ) : tokenInfo.burned ? (
+          <section className="af-card af-receipt">
+            <div className="af-receipt-icon">
+              <CheckCircle2 size={34} strokeWidth={1.5} />
+            </div>
+            <StatusBadge tone="success">
+              Your next step is confirmed
+            </StatusBadge>
+            <h1>Telehealth Onboarding &amp; Appointment Confirmed</h1>
+            <p>
+              The demo appointment has been recorded. This invitation is now
+              complete and cannot be used to book again.
+            </p>
+            <dl className="af-demographics">
+              <div>
+                <dt>Receiving specialist</dt>
+                <dd>{tokenInfo.assignedDoctor}</dd>
+              </div>
+              <div>
+                <dt>Appointment time</dt>
+                <dd>
+                  {tokenInfo.appointmentSlot
+                    ? new Date(tokenInfo.appointmentSlot).toLocaleString(
+                        undefined,
+                        { dateStyle: "medium", timeStyle: "short" },
+                      )
+                    : "Recorded"}
+                </dd>
+              </div>
+              <div>
+                <dt>Specialty</dt>
+                <dd>{tokenInfo.recommendedSpecialty}</dd>
+              </div>
+              <div>
+                <dt>Estimated demo copay</dt>
+                <dd>${tokenInfo.copayEstimateUsd}</dd>
+              </div>
+            </dl>
+            <p className="af-under-button">
+              <Lock size={12} /> A single-use invitation. A recorded next step.
+            </p>
+            <details
+              className="af-detail"
+              style={{ textAlign: "left", marginTop: 25 }}
+            >
+              <summary>View workflow receipt</summary>
+              <pre className="af-code">
+                {JSON.stringify(
+                  {
+                    patientId: tokenInfo.patientId,
+                    completedAt: tokenInfo.tokenUsedAt,
+                    hubspotDealId: tokenInfo.hubspotDealId,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
             <Link
               href="/"
-              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950"
+              className="af-button af-button-primary"
+              style={{ marginTop: 28 }}
             >
-              Return to Main Workspace
+              Explore another demo case <ArrowRight size={14} />
             </Link>
-          </div>
-        ) : tokenInfo.burned ? (
-          /* Burned Capability Token Read-Only Receipt View (ADR-007) */
-          <div className="mx-auto max-w-2xl rounded-2xl border border-emerald-500/40 bg-slate-900/90 p-8 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
-                  <CheckCircle2 className="h-6 w-6" />
-                </div>
-                <div>
-                  <span className="rounded bg-amber-500/20 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-amber-300">
-                    Single-Use Capability Token Burned (ADR-007)
-                  </span>
-                  <h1 className="mt-1 text-xl font-bold text-white">
-                    Telehealth Onboarding & Appointment Confirmed
-                  </h1>
-                </div>
-              </div>
-              <Lock className="h-5 w-5 text-slate-500" />
-            </div>
-
-            <p className="mt-4 text-xs leading-relaxed text-slate-300">
-              This capability token has been cryptographically burned (
-              <code className="font-mono text-emerald-300">
-                tokenUsedAt ={" "}
-                {tokenInfo.tokenUsedAt
-                  ? new Date(tokenInfo.tokenUsedAt).toISOString()
-                  : "burned"}
-              </code>
-              ) and cannot be replayed. Re-visiting this URL displays your
-              immutable appointment confirmation receipt.
-            </p>
-
-            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <span className="text-[10px] uppercase text-slate-400">
-                  Assigned Specialist
-                </span>
-                <p className="mt-1 text-sm font-semibold text-white">
-                  {tokenInfo.assignedDoctor}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <span className="text-[10px] uppercase text-slate-400">
-                  Confirmed Appointment Slot
-                </span>
-                <p className="mt-1 font-mono text-xs font-semibold text-emerald-300">
-                  {tokenInfo.appointmentSlot
-                    ? new Date(tokenInfo.appointmentSlot).toLocaleString()
-                    : "Booked"}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <span className="text-[10px] uppercase text-slate-400">
-                  HubSpot Deal Stage (n8n #3)
-                </span>
-                <p className="mt-1 text-xs font-semibold text-sky-300">
-                  Closed Won — Appointment Booked ({tokenInfo.hubspotDealId})
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
-                <span className="text-[10px] uppercase text-slate-400">
-                  HubSpot Contact Lifecycle
-                </span>
-                <p className="mt-1 font-mono text-xs font-semibold text-emerald-300">
-                  lifecyclestage = &quot;customer&quot;
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-5">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
-              >
-                Inspect Full Closed-Loop Telemetry in X-Ray UI
-              </Link>
-              {tokenInfo.patientId && (
-                <Link
-                  href={`/admin/vault/${tokenInfo.patientId}`}
-                  className="text-xs font-medium text-slate-400 underline hover:text-white"
-                >
-                  View Clinician Vault Record
-                </Link>
-              )}
-            </div>
-          </div>
+          </section>
         ) : (
-          /* Active 3-Step Onboarding Wizard */
-          <div className="space-y-6">
-            {/* Header Summary Card */}
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
-                  Clinician-Approved Telehealth Onboarding
-                </span>
-                <h1 className="mt-0.5 text-lg font-bold text-white">
-                  {tokenInfo.assignedDoctor} • {tokenInfo.recommendedSpecialty}
-                </h1>
-                <p className="text-xs text-slate-400">
-                  Estimated In-Network Copay:{" "}
-                  <strong className="text-emerald-300">
-                    ${tokenInfo.copayEstimateUsd}.00 USD
-                  </strong>
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleAutoPopulateDemo}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                1-Click Demo Auto-Fill All 3 Steps
-              </button>
+          <>
+            <div className="af-page-intro">
+              <p className="af-eyebrow">
+                <span className="af-dot" /> Your private invitation
+              </p>
+              <h1 className="af-page-title">You’re one step closer.</h1>
+              <p>
+                Confirm a few details, review the sample consent, and choose
+                your demo appointment.
+              </p>
             </div>
-
-            {/* Step Indicator Pills */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                {
-                  num: 1 as const,
-                  title: "1. KYC & Insurance Card",
-                  icon: CreditCard,
-                },
-                {
-                  num: 2 as const,
-                  title: "2. Telehealth NPP E-Sign",
-                  icon: FileSignature,
-                },
-                {
-                  num: 3 as const,
-                  title: "3. Specialist Slot Booking",
-                  icon: CalendarClock,
-                },
-              ].map((item) => {
-                const Icon = item.icon;
-                const active = step === item.num;
-                const done = step > item.num;
-                return (
-                  <button
-                    key={item.num}
-                    type="button"
-                    onClick={() => setStep(item.num)}
-                    className={`flex items-center gap-2.5 rounded-xl border p-3.5 text-left text-xs font-semibold transition ${
-                      active
-                        ? "border-emerald-500 bg-emerald-500/10 text-white"
-                        : done
-                        ? "border-emerald-500/30 bg-slate-900 text-emerald-300"
-                        : "border-slate-800 bg-slate-900/50 text-slate-400"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span>{item.title}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <form
-              onSubmit={handleCompleteOnboarding}
-              className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6"
-            >
-              {step === 1 && (
-                <div className="space-y-4">
-                  <h2 className="text-base font-bold text-white">
-                    Step 1: Identity (KYC) & Insurance Card Verification
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Verify your government-issued photo ID and the last 4 digits
-                    of your subscriber card.
-                  </p>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300">
-                        Government Photo ID Type
-                      </label>
-                      <select
-                        value={kycIdType}
-                        onChange={(e) => setKycIdType(e.target.value)}
-                        className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white"
-                      >
-                        <option value="Driver_License">
-                          State Driver&apos;s License
-                        </option>
-                        <option value="Passport">U.S. / Foreign Passport</option>
-                        <option value="State_ID">State Identification Card</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-300">
-                        Insurance Member Card (Last 4 Digits)
-                      </label>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        value={kycCardNumberLast4}
-                        onChange={(e) => setKycCardNumberLast4(e.target.value)}
-                        className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 font-mono text-xs text-white"
-                        placeholder="8944"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-4">
+            <Journey current={3} />
+            <div className="af-onboarding-grid">
+              <aside>
+                <nav className="af-card af-steps" aria-label="Onboarding steps">
+                  {[
+                    {
+                      n: 1 as const,
+                      title: "Your details",
+                      subtitle: "Synthetic identity & card",
+                      Icon: CreditCard,
+                    },
+                    {
+                      n: 2 as const,
+                      title: "Your consent",
+                      subtitle: "Review & sign",
+                      Icon: FileSignature,
+                    },
+                    {
+                      n: 3 as const,
+                      title: "Your appointment",
+                      subtitle: "Choose a time",
+                      Icon: CalendarClock,
+                    },
+                  ].map(({ n, title, subtitle, Icon }) => (
                     <button
+                      key={n}
                       type="button"
-                      onClick={() => setStep(2)}
-                      className="rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
-                    >
-                      Continue to Step 2: Telehealth NPP Consent →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-4">
-                  <h2 className="text-base font-bold text-white">
-                    Step 2: HIPAA Notice of Privacy Practices (NPP) & Telehealth
-                    E-Signature
-                  </h2>
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs leading-relaxed text-slate-300">
-                    <p className="font-semibold text-white">
-                      AegisFlow HIPAA Privacy & Telehealth Informed Consent
-                      (Document v2026.1)
-                    </p>
-                    <p className="mt-1">
-                      By signing below, I acknowledge receipt of the Notice of
-                      Privacy Practices (`NPP_AND_TELEHEALTH_CONSENT`). My
-                      electronic signature, timestamp, IP address, and SHA-256
-                      document hash are recorded in the immutable{" "}
-                      <code>ConsentRecord</code> table.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-slate-300">
-                      Type Full Legal Name as Electronic Signature
-                    </label>
-                    <input
-                      type="text"
-                      value={nppSignatureText}
-                      onChange={(e) => setNppSignatureText(e.target.value)}
-                      placeholder="e.g., Eleanor Vance"
-                      className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5 font-serif text-sm italic text-emerald-300"
-                      required
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300"
-                    >
-                      ← Back
-                    </button>
-                    <button
-                      type="button"
+                      className={`af-step ${step === n ? "is-current" : step > n ? "is-complete" : ""}`}
                       onClick={() => {
-                        if (!nppSignatureText.trim()) {
-                          setNppSignatureText("Patient Verified E-Signature");
-                        }
-                        setStep(3);
+                        setStep(n);
+                        setSubmitError(null);
                       }}
-                      className="rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
+                      disabled={n > step}
+                      aria-current={step === n ? "step" : undefined}
                     >
-                      Continue to Step 3: Select Specialist Slot →
+                      <span>
+                        {step > n ? (
+                          <CheckCircle2 size={16} />
+                        ) : (
+                          <Icon size={16} />
+                        )}
+                      </span>
+                      <div>
+                        <strong>{title}</strong>
+                        <small>{subtitle}</small>
+                      </div>
                     </button>
-                  </div>
+                  ))}
+                </nav>
+                <div className="af-onboarding-side-note">
+                  <ShieldCheck size={24} strokeWidth={1.5} />
+                  <strong
+                    style={{
+                      display: "block",
+                      fontSize: 11,
+                      color: "#738bad",
+                      marginBottom: 7,
+                    }}
+                  >
+                    A private path forward.
+                  </strong>
+                  Your invitation expires after 48 hours and can be used for one
+                  booking. The details in this demonstration are synthetic.
                 </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-4">
-                  <h2 className="text-base font-bold text-white">
-                    Step 3: Select Specialist Telehealth Appointment Slot
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Confirming your appointment burns this single-use 48-hour
-                    capability token (`tokenUsedAt = now()`) and triggers n8n
-                    Workflow #3 to transition your HubSpot Deal to{" "}
-                    <strong className="text-emerald-300">
-                      Closed Won — Appointment Booked
-                    </strong>
-                    .
-                  </p>
-
-                  <div className="space-y-2.5">
-                    {AVAILABLE_SLOTS.map((slot) => (
-                      <label
-                        key={slot.id}
-                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-4 text-xs transition ${
-                          appointmentSlotIso === slot.id
-                            ? "border-emerald-500 bg-emerald-500/10 text-white"
-                            : "border-slate-800 bg-slate-950 text-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="radio"
-                            name="slot"
-                            checked={appointmentSlotIso === slot.id}
-                            onChange={() => setAppointmentSlotIso(slot.id)}
-                            className="accent-emerald-500"
-                          />
-                          <span className="font-semibold">{slot.label}</span>
-                        </div>
-                        <span className="font-mono text-[11px] text-emerald-300">
-                          {tokenInfo.assignedDoctor}
-                        </span>
-                      </label>
-                    ))}
+              </aside>
+              <section className="af-card">
+                <div className="af-card-head">
+                  <div>
+                    <p className="af-section-label" style={{ marginBottom: 7 }}>
+                      Step {step} of 3
+                    </p>
+                    <h2>
+                      {step === 1
+                        ? "A quick introduction"
+                        : step === 2
+                          ? "On the same page"
+                          : "Make time for the next step"}
+                    </h2>
                   </div>
-
+                  <button
+                    className="af-button af-button-quiet"
+                    type="button"
+                    onClick={handleAutoPopulateDemo}
+                  >
+                    <Sparkles size={13} /> Use demo details
+                  </button>
+                </div>
+                <form
+                  className="af-onboarding-content"
+                  onSubmit={handleCompleteOnboarding}
+                >
                   {submitError && (
-                    <div className="rounded-xl border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-300">
+                    <div className="af-alert" role="alert">
+                      <AlertTriangle size={16} />
                       {submitError}
                     </div>
                   )}
-
-                  <div className="flex items-center gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => setStep(2)}
-                      className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300"
-                    >
-                      ← Back
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="flex-1 rounded-xl bg-emerald-500 px-5 py-3 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400 disabled:opacity-50"
-                    >
-                      {submitting
-                        ? "Burning Token & Syncing HubSpot Deal (Closed Won)..."
-                        : "Confirm Appointment & Burn Single-Use Capability Token"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </form>
-          </div>
+                  {step === 1 && (
+                    <>
+                      <h2>Confirm your details</h2>
+                      <p>
+                        Use a synthetic card to try this step. No identity or
+                        insurance provider is contacted.
+                      </p>
+                      <div className="af-form-grid">
+                        <Field label="Identification type">
+                          <select
+                            className="af-input"
+                            aria-label="Demo identification type"
+                            value={kycIdType}
+                            onChange={(e) => setKycIdType(e.target.value)}
+                          >
+                            <option value="Driver_License">
+                              Driver’s license
+                            </option>
+                            <option value="Passport">Passport</option>
+                            <option value="State_ID">
+                              State identification card
+                            </option>
+                          </select>
+                        </Field>
+                        <Field label="Insurance card · last four digits">
+                          <input
+                            className="af-input"
+                            aria-label="Insurance card last four digits"
+                            inputMode="numeric"
+                            maxLength={4}
+                            value={kycCardNumberLast4}
+                            onChange={(e) =>
+                              setKycCardNumberLast4(e.target.value)
+                            }
+                            required
+                          />
+                        </Field>
+                      </div>
+                      <div className="af-form-actions">
+                        <span className="af-under-button">
+                          <Lock size={11} /> Encrypted in the patient vault
+                        </span>
+                        <button
+                          className="af-button af-button-primary"
+                          type="button"
+                          onClick={() => {
+                            if (!/^\d{4}$/.test(kycCardNumberLast4)) {
+                              setSubmitError(
+                                "Enter four synthetic card digits to continue.",
+                              );
+                              return;
+                            }
+                            setSubmitError(null);
+                            setStep(2);
+                          }}
+                        >
+                          Continue to Step 2 <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {step === 2 && (
+                    <>
+                      <h2>A moment to review</h2>
+                      <p>
+                        This sample shows how a consent step fits into the
+                        onboarding journey.
+                      </p>
+                      <div className="af-consent-text">
+                        <strong>
+                          Demonstration privacy & telehealth consent
+                        </strong>
+                        Enter a synthetic name to try the consent step. Your
+                        signature is encrypted with the consent version and
+                        timestamp. This sample is not a clinical consent form.
+                      </div>
+                      <Field label="Type a synthetic name">
+                        <input
+                          className="af-input"
+                          aria-label="Demo signature"
+                          value={nppSignatureText}
+                          onChange={(e) => setNppSignatureText(e.target.value)}
+                          placeholder="e.g. Synthetic Patient"
+                          required
+                          style={{ fontFamily: "Sora,sans-serif" }}
+                        />
+                      </Field>
+                      <div className="af-form-actions">
+                        <button
+                          className="af-button af-button-quiet"
+                          type="button"
+                          onClick={() => setStep(1)}
+                        >
+                          <ArrowLeft size={14} /> Back
+                        </button>
+                        <button
+                          className="af-button af-button-primary"
+                          type="button"
+                          disabled={nppSignatureText.trim().length < 3}
+                          onClick={() => setStep(3)}
+                        >
+                          Continue to Step 3 <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {step === 3 && (
+                    <>
+                      <h2>Choose a time that works</h2>
+                      <p>
+                        {tokenInfo.recommendedSpecialty} ·{" "}
+                        {tokenInfo.assignedDoctor}
+                      </p>
+                      {AVAILABLE_SLOTS.map((slot) => (
+                        <label
+                          key={slot.id}
+                          className={`af-slot ${appointmentSlotIso === slot.id ? "is-selected" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name="appointment"
+                            value={slot.id}
+                            checked={appointmentSlotIso === slot.id}
+                            onChange={() => setAppointmentSlotIso(slot.id)}
+                          />
+                          <CalendarClock
+                            size={19}
+                            style={{ color: "#829ac4" }}
+                          />
+                          <span>
+                            <strong>
+                              {new Date(slot.id).toLocaleDateString(undefined, {
+                                weekday: "long",
+                                month: "long",
+                                day: "numeric",
+                              })}
+                            </strong>
+                            <small>
+                              {new Date(slot.id).toLocaleTimeString(undefined, {
+                                hour: "numeric",
+                                minute: "2-digit",
+                                timeZoneName: "short",
+                              })}{" "}
+                              · Demo telehealth appointment
+                            </small>
+                          </span>
+                        </label>
+                      ))}
+                      <div className="af-form-actions">
+                        <button
+                          type="button"
+                          className="af-button af-button-quiet"
+                          onClick={() => setStep(2)}
+                        >
+                          <ArrowLeft size={14} /> Back
+                        </button>
+                        <button
+                          type="submit"
+                          className="af-button af-button-primary"
+                          disabled={submitting}
+                        >
+                          {submitting ? "Confirming…" : "Confirm Appointment"}
+                          <CheckCircle2 size={15} />
+                        </button>
+                      </div>
+                      <p className="af-under-button">
+                        Estimated demo copay: ${tokenInfo.copayEstimateUsd} · No
+                        payment is collected.
+                      </p>
+                    </>
+                  )}
+                </form>
+              </section>
+            </div>
+          </>
         )}
       </main>
+      <WorkspaceFooter />
     </div>
   );
 }
