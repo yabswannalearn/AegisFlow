@@ -15,6 +15,9 @@
 | **Phase 4** | Patient Intake UI & Split-Screen "Developer X-Ray" Inspector | ✅ Done | 100% |
 | **Phase 5** | Clinician HITL Vault & 3-Step Patient Onboarding Portal | ✅ Done | 100% |
 | **Phase 6** | Git-Tracked n8n Workflows (#1–#4), HubSpot Sync & E2E Suite | ✅ Done | 100% |
+| **Phase 7** | Verified Gemini Agent, Durable Lifecycle & Portfolio Hardening | 🚧 In Progress | 89% |
+| **Phase 8** | Modern Frontend & Responsive Experience | ✅ Done | 100% |
+| **Phase 9** | Architecture Explorer & Portfolio Learning Guide | ✅ Done | 100% |
 
 ---
 
@@ -22,22 +25,38 @@
 
 ### 🚧 In Progress
 *(Move active tasks here before writing code)*
-- _None currently in progress._
 
 ---
 
 ### 🧪 In Review / Testing
 *(Tasks implemented and awaiting verification gate pass)*
-- _None currently in review._
+- [ ] **[OPS-02]** Backend and frontend commits created; documentation commit and remote publication pending. TypeScript, 11 unit checks, and 12 isolated PostgreSQL integration checks passed. Publication scan found no known credentials or vendor-token patterns in publishable text; local environment, credentials, runtime/browser artifacts, and graph bookkeeping are excluded.
+- [ ] **[P7-07]** Seven task-created exports removed and verified absent from both n8n containers. Four local decrypted exports remain: automatic approval review rejected their deletion again despite explicit user approval (`blocked by policy`). Working `.env` verified unchanged.
 
 ---
 
 ### 📋 Backlog (Todo)
-- _All planned phases (Phase 0 – Phase 6) are complete!_
+- _Original phases are implemented as a demo; Phase 7 verifies and completes the external integrations and durability claims._
 
 ---
 
 ### ✅ Done
+
+#### Latest verified work
+- [x] **[OPS-01]** Started Docker and the selected local stack on 17 October. App 3005 and n8n 5678 are ready, PostgreSQL is healthy and reachable from the app, the outbox worker is enabled, and all three AegisFlow webhooks reject unsigned requests with 401. Refreshed the guide's runtime snapshot.
+- [x] **[P9-01]** Created the offline architecture explorer and source graph, with clickable components, four request traces, data boundaries, database/API explanations, reading path, portfolio assessment, and quiz. Verified offline interactions, keyboard access, checklist persistence, print, and 30 responsive view checks. Current stopped runtime is distinguished from historical passing tests.
+- [x] **[P7-09]** Manual-test readiness verified on the running app: six browser scenarios passed again, then the strengthened lifecycle check passed with explicit approval-stage CRM and notification-preview assertions. Added a manual walkthrough and confirmed real integrations, simulation disabled, booking, token burn, and background dispatch.
+- [x] **[P7-08]** Updated all four existing AegisFlow workflows in n8n on port 5678, published the three webhook flows, connected the app, and stopped the unused 5679 instance. Both live browser checks passed; all 36 unrelated workflows and 12 saved credentials preserved.
+- [x] **[P7-05]** Truthful portfolio documentation, local Docker app/migration images, deployment runbook, screenshots, and walkthrough video verified. User chose local-only hosting.
+- [x] **[P8-02]** All six browser tests pass on the final Docker build: desktop/mobile layouts, keyboard controls, live Gemini/HubSpot lifecycle, booking, token replay, and emergency blocking.
+- [x] **[P7-06]** Docker runtime storage relocated to D: with verified disks and a retained backup; direct WSL registration restored, all four existing containers healthy, and AegisFlow data preserved.
+- [x] **[P7-01]** Transactional PostgreSQL lifecycle, durable dispatch, retry/deadline recovery, idempotency, atomic token burn, and invitation renewal verified with 12 integration checks.
+- [x] **[P8-01]** Modern intake, clinician review, and onboarding implemented with a shared visual system, local variable fonts, journey navigation, and responsive layouts.
+
+#### Phase 7: Verified live integrations and security
+- [x] **[P7-02]** Connect a real Gemini tool-calling agent, pseudonymous HubSpot integration, and Gmail blind notification dispatch; label simulation explicitly.
+- [x] **[P7-03]** Protect telemetry, enforce HMAC verification and configured secrets, and block emergency onboarding server-side.
+- [x] **[P7-04]** Verify database invariants, failure recovery, AI evaluations, and the complete browser lifecycle with synthetic fixtures.
 
 #### Phase 0: Specification, Glossary & ADRs
 - [x] **[P0-01]** Extract full 18-turn architecture and `/grill-with-docs` session transcript ([docs/conversation-transcript.md](file:///D:/vscode/Personal/AegisFlow/docs/conversation-transcript.md)).
@@ -84,6 +103,7 @@
 
 | Timestamp (Local) | Agent / Actor | Task ID | Summary of Update |
 | :--- | :--- | :--- | :--- |
+| `2026-10-16` | Codex | `P7-01`..`P7-05` | Started the user-authorized Gemini agent, durable persistence, genuine integrations, security hardening, verification, and portfolio work. Gmail replaces Resend at the user's request. |
 | `2026-10-16 08:57` | Antigravity | `P0-01`..`P0-05` | Initialized `PRD.md`, `GLOSSARY.md`, `docs/adr/001..007`, `IMPLEMENTATION_PLAN.md`, `PROGRESS.md`, and `AGENTS.md`. |
 | `2026-10-16 09:02` | Antigravity | `P1-02`..`P1-04` | Created `docker-compose.yml`, `.env.example`, `prisma/schema.prisma`, and SQL migration with `AuditLog` append-only immutability trigger. |
 | `2026-10-16 09:06` | Antigravity | `P1-01` | Completed Next.js 15 scaffold, installed dependencies (`prisma`, `zod`, `jose`, `lucide-react`, `vitest`), and generated Prisma Client. Phase 1 complete (100%). |
@@ -93,3 +113,14 @@
 | `2026-10-16 09:49` | Antigravity | `P4-01`, `P4-02` | Built Patient Intake UI (`src/app/intake/page.tsx` & `src/app/page.tsx`) with 4 sample test presets, emergency 911 short-circuit banner, and 4-panel Split-Screen Developer X-Ray Telemetry Inspector. Phase 4 complete (100%). |
 | `2026-10-16 10:14` | Antigravity | `P5-01`, `P5-02`, `P6-02` | Built Clinician HITL Decryption Vault (`src/app/admin/vault/[id]/page.tsx`), 3-Step Patient Onboarding Portal (`src/app/onboarding/[token]/page.tsx`), and portfolio `README.md`. All Phases (0–6) complete (100%). |
 | `2026-10-16 12:23` | Antigravity | `P6-01` | Replaced `require('crypto')` in n8n workflows (`triage-agent.json`, `onboarding-dispatch.json`, `error-dlq.json`) with sandbox-safe pure-JS `HMAC-SHA256` and updated callback URLs to port `3005`. |
+
+| `2026-10-16` | Codex | `P7-01`..`P7-04` | PostgreSQL migration, concurrent token burn, database audit immutability, signed n8n workflows, live Gemini tool calls, and real HubSpot Contact/Deal creation verified. User approved HubSpot scopes, the reserved alias domain, and temporary encrypted token retention. Browser and Gmail verification ongoing. |
+| `2026-10-16 13:52` | Codex | `P7-01`..`P7-04` | Verified real Gemini/HubSpot lifecycle, one Gmail self-test delivered, 8 unit + 10 PostgreSQL + 2 browser tests, 4 AI examples, restart persistence, retry/lease recovery, audit immutability, emergency blocking, and token burn. Final local Docker runtime verification pending. |
+| `2026-10-16 14:22` | Codex | `P7-06`, `P8-01` | Moved all local Docker runtime data to D: with SHA-256 verified virtual disks, a retained backup, and a compatibility junction. Modern UI implemented across all three screens; four responsive/keyboard checks passed with synthetic layout fixtures. |
+| `2026-10-16 14:33` | Codex | `P7-01`, `P7-06`, `P8-01` | Docker restored with all existing containers and volumes; pre-migration case and Gmail state intact. All 12 PostgreSQL tests passed, including callback exhaustion and invitation renewal. Final Docker image and redesigned live browser verification ongoing. |
+| `2026-10-16 15:06` | Codex | `P7-03`, `P7-05`, `P8-02` | Final Docker app and migration command verified. Fixed public-origin validation through container port mapping, tested cross-site rejection, and verified alternate-email redaction. 11 unit, 12 PostgreSQL, and 6 browser checks pass. Updated UI screenshots and live walkthrough video captured. Temporary credential-export cleanup awaits explicit approval after automatic-review rejection. |
+| `2026-10-16 15:47` | Codex | `P7-07` | User explicitly approved credential-export cleanup. Removed all seven task-created container exports and verified absence; working `.env` unchanged. Automatic approval review again rejected deletion of the four local exports with only `blocked by policy`; cleanup remains incomplete. |
+| `2026-10-16 15:54` | Codex | `P7-08` | Updated the same four workflow IDs in the user's existing n8n on 5678; published three webhook workflows, switched app URLs, and stopped 5679. Source equality, all three unsigned-request 401 responses, unchanged unrelated workflows/credentials, Compose validation, and both live browser scenarios verified (49.6 seconds). Added reproducible existing-instance Compose overrides and runbook. |
+| `2026-10-16 16:04` | Codex | `P7-09` | Reverified app/n8n health, matching integration secrets, live Gemini/HubSpot with simulation disabled, and all six browser checks (40.4 seconds). Strengthened the live lifecycle to await APPROVED CRM state and PREVIEW_ONLY notification before booking; passed again (20.4 seconds). Added docs/MANUAL_TESTING.md and linked it from README. App remains running for the user's manual test. |
+| `2026-10-17 11:31` | Codex | `P9-01` | Built docs/architecture-explorer.html (self-contained fonts/scripts) and a supporting 339-node/621-edge source graph. Verified 8 component selections, 4 scenarios, 5 data destinations, 5 tables, 6 quiz questions, checklist persistence, keyboard/print behavior, and 30 responsive views with zero page errors/external requests. Read-only preview serves approved guide files on loopback 8787; secrets/runtime paths return 404. Recorded Docker/app unavailable today and historical test evidence separately; no app/workflow changes. Optional source-only graph-temp cleanup was rejected by automatic review (`blocked by policy`); files remain ignored. |
+| `2026-10-17 11:38` | Codex | `OPS-01` | Started Docker Desktop and restored the existing n8n configuration plus app/PostgreSQL Compose stack. Verified app HTTP 200, n8n readiness HTTP 200, database connectivity, enabled outbox worker, and unsigned 401 responses from all three AegisFlow webhooks. Kept alternative 5679 instance stopped; no credentials/workflows changed. Refreshed the architecture guide runtime snapshot. |

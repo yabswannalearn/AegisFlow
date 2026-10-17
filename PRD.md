@@ -1,6 +1,8 @@
 # Product Requirements Document (PRD)
 
-- **Project Name:** AegisFlow — HIPAA-Compliant AI Patient Intake, Triage & HubSpot Onboarding Engine
+- **Project Name:** AegisFlow — Privacy-Focused AI Intake & Onboarding Portfolio Demo
+> Implementation amendment (2026-10-16): Gemini replaces the original model, Gmail replaces Resend, ADR-001 uses the full UUID at vault.example.com, and ADR-007 permits temporary encrypted token retention. See README.md and docs/VERIFICATION.md for implemented behavior and verification limits. Insurance, clinician login, consent text, and slots are synthetic demonstrations.
+
 - **Specification ID:** `AF-HIPAA-03 // REV 3.0 (MASTER — POST-GRILL LOCKED)`
 - **Architecture Pattern:** Hybrid Full-Stack Security Gateway (Next.js App Router BFF) + Stateless Workflow Orchestration (Self-Hosted Dockerized n8n)
 - **Regulatory Scope:** US HIPAA (PHI Privacy & Security Rules), TCPA (Telemarketing/SMS Opt-In), Telehealth Informed Consent & Notice of Privacy Practices (NPP)
@@ -10,12 +12,12 @@
 
 ## 1. Executive Summary & Architectural Problem
 
-US telehealth providers face a critical compliance bottleneck when integrating modern LLM triage agents and marketing CRMs like HubSpot. Standard low-code automation pipelines transmit raw Protected Health Information (PHI) directly into third-party AI training logs and unencrypted CRM properties, violating **HIPAA privacy mandates** and **TCPA telemarketing consent laws**.Furthermore, linking a plaintext patient name and email to a healthcare intake pipeline inside a standard CRM without a $3,600/month Enterprise BAA constitutes a direct HIPAA violation.
+This synthetic portfolio project explores reducing direct identifier exposure across an AI routing and CRM workflow. Encryption and pseudonymization demonstrate technical controls; they do not establish regulatory compliance, a provider retention policy, or clinical safety. No real patient use is authorized by this specification.
 
 **AegisFlow** solves this via a strict zero-trust, split-responsibility architecture:
 
 1. **Next.js Client & Server BFF (The HIPAA Vault):** Acts as the deterministic security boundary. Handles patient intake, TCPA/HIPAA consent logging, `AES-256-GCM` field-level envelope encryption in PostgreSQL, contextual known-entity + 6-pass regex PII scrubbing, append-only immutable audit logging, frictionless demo Clinician RBAC (`jose` JWT), and blind email/SMS notification dispatch.
-2. **Self-Hosted n8n Engine (Stateless Orchestrator):** Configured with zero execution payload retention (`EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`). Receives strictly anonymized payloads and pseudonymous CRM aliases (`Patient_<short_uuid>`) via `HMAC-SHA256` signed webhooks. Executes an XML-sandboxed AI Triage Agent with tool-calling, syncs HubSpot CRM pipelines using Vault reference URLs, handles Dead-Letter Queue (DLQ) failure callbacks, and orchestrates closed-loop patient onboarding.
+2. **Self-Hosted n8n Engine (Stateless Orchestrator):** Configured with zero execution payload retention (`EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`). Receives scrubbed, pseudonymous payloads and pseudonymous CRM aliases (`Patient_<short_uuid>`) via `HMAC-SHA256` signed webhooks. Executes an XML-sandboxed AI Triage Agent with tool-calling, syncs HubSpot CRM pipelines using Vault reference URLs, handles Dead-Letter Queue (DLQ) failure callbacks, and orchestrates closed-loop patient onboarding.
 
 ---
 
@@ -72,8 +74,8 @@ flowchart LR
 | **Database & ORM** | PostgreSQL 16 (Docker / Neon) + Prisma / Drizzle ORM | Stores `AES-256-GCM` encrypted `PatientVault` rows, append-only `AuditLog` records (enforced via SQL trigger), `ConsentRecord` proofs, and `WebhookIdempotency` keys. | `$0 (Free/Local)` |
 | **Security & Auth** | Native Node.js `crypto` + `jose` JWT (RBAC) | `AES-256-GCM` field encryption, `HMAC-SHA256` webhook signing, `SHA-256` email/token hashing, and Clinician RBAC with 1-click Demo Clinician session minting. | `$0 (Native)` |
 | **Orchestration** | Self-Hosted n8n (Docker Compose + Cloud/Simulated Fallback) | Stateless webhook routing (`EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`), AI Agent execution, tool calling, HubSpot CRM pipeline updates, and Dead-Letter Queue error handling. | `$0 (Self-Host)` |
-| **AI & LLM Layer** | n8n AI Agent + OpenAI `gpt-4o-mini` / Claude 3.5 Haiku | XML-sandboxed anonymized symptom triage, Structured Output Parser (strict JSON schema), emergency `CRITICAL` short-circuit, and HTTP tool invocation. | `~$0.01 / 50 runs` |
-| **CRM & Comms** | HubSpot Dev Sandbox (v3 API), Resend, Slack/Discord Webhook | Manages pseudonymous Contacts, Deals, custom Triage Pipeline stages, Vault pointer links, HIPAA-safe magic link emails, and clinic alerts. | `$0 (Sandbox)` |
+| **AI & LLM Layer** | n8n AI Agent + Google Gemini `gemini-3.1-flash-lite` | XML-sandboxed anonymized symptom triage, Structured Output Parser (strict JSON schema), emergency `CRITICAL` short-circuit, and HTTP tool invocation. | `~$0.01 / 50 runs` |
+| **CRM & Comms** | HubSpot private app (v3/v4 APIs), Gmail OAuth | Manages pseudonymous Contacts, Deals, custom Triage Pipeline stages, Vault pointer links, synthetic demo magic link emails, and clinic alerts. | `$0 (Sandbox)` |
 
 ---
 
@@ -93,7 +95,7 @@ flowchart LR
   "patient_uuid": "99481a7b-3c2d-4e9f-8a1b-772190c8e112",
   "crm_alias": {
     "first_name": "Patient_99481a",
-    "email": "99481a@vault.aegisflow.internal"
+    "email": "99481a00-1234-4abc-9def-000000000000@vault.example.com"
   },
   "insurance_provider": "Aetna_PPO",
   "scrubbed_symptoms": "Patient [REDACTED_NAME] (DOB: [REDACTED_DATE]) reports 4 days of chest tightness...",
@@ -120,13 +122,13 @@ flowchart LR
 ```
 
 - **[FR-2.4] Emergency Clinical Short-Circuit (`ADR-005`):** If `urgency_level === "CRITICAL"`, n8n branches immediately: sets HubSpot Deal priority to `HIGH`, fires an instant `[RED ALERT]` Slack/Discord webhook, and updates the callback status so the patient UI displays an emergency `911 / Emergency Care` banner instead of self-scheduling onboarding.
-- **[FR-2.5] Zero-PHI Pseudonymous HubSpot Sync (`ADR-001`, `ADR-007`):** n8n upserts the HubSpot Contact using the pseudonymous email (`99481a@vault.aegisflow.internal`), deduplicates open Deals for `patient_uuid`, and creates/updates the Deal in the **"Patient Intake Pipeline"** (Stage: `AI Triaged - Pending Clinician Review`) with `vault_review_url`.
+- **[FR-2.5] Zero-PHI Pseudonymous HubSpot Sync (`ADR-001`, `ADR-007`):** n8n upserts the HubSpot Contact using the pseudonymous email (`99481a00-1234-4abc-9def-000000000000@vault.example.com`), deduplicates open Deals for `patient_uuid`, and creates/updates the Deal in the **"Patient Intake Pipeline"** (Stage: `AI Triaged - Pending Clinician Review`) with `vault_review_url`.
 
 ### Module 3: Clinician HITL Vault & Blind Notification Dispatch (`/admin/vault/[id]` $\leftrightarrow$ n8n #2)
 - **[FR-3.1] RBAC Middleware & One-Click Demo Session (`ADR-006`):** `/admin/vault/[id]` is protected by `jose` JWT cookie middleware. Includes a **"Sign in as Demo Clinician (Dr. Sarah Chen — Cardiology)"** one-click action that mints a real 1-hour signed JWT (`sub: "dr_chen_demo"`, `role: "CLINICIAN"`) for zero-friction portfolio evaluation.
 - **[FR-3.2] Audited Decryption:** Loading the patient record inserts an append-only `AuditLog` row (`actorId: "dr_chen_demo"`, `action: PHI_DECRYPTED_VIEW`) and decrypts the raw PII, clinical notes, and AI triage card on the server.
-- **[FR-3.3] One-Click Approval & Hashed Capability Token (`ADR-007`):** Clicking **"Approve & Start Onboarding"** generates a random 32-byte raw `token`, stores only `onboardingTokenHash = sha256(token)` and `tokenExpiresAt = now + 48h` in `PatientVault`, and triggers **n8n Workflow #2**.
-- **[FR-3.4] Blind Notification Dispatch (`ADR-001`):** n8n Workflow #2 updates the HubSpot Deal stage to `Approved - Onboarding Sent` and calls Next.js `POST /api/internal/notify` (signed with HMAC). Next.js decrypts the patient's email/phone in memory and sends the HIPAA-safe magic link (`https://aegisflow.demo/onboarding/{raw_token}`) via Resend/Twilio so plaintext contact info never enters n8n or HubSpot.
+- **[FR-3.3] One-Click Approval & Hashed Capability Token (`ADR-007`):** Clicking **"Approve & Start Onboarding"** generates a random 32-byte raw `token`, stores `onboardingTokenHash = sha256(token)`, `tokenExpiresAt = now + 48h`, and a temporary AES-GCM encrypted token until delivery, expiry, or booking (user-approved ADR-007 amendment) in `PatientVault`, and triggers **n8n Workflow #2**.
+- **[FR-3.4] Blind Notification Dispatch (`ADR-001`):** n8n Workflow #2 updates the HubSpot Deal stage to `Approved - Onboarding Sent` and calls Next.js `POST /api/internal/notify` (signed with HMAC). Next.js decrypts the patient's email/phone in memory and sends the synthetic demo magic link (`https://aegisflow.demo/onboarding/{raw_token}`) via Gmail so plaintext contact info never enters n8n or HubSpot.
 
 ### Module 4: 3-Step Patient Onboarding Portal (`/onboarding/[token]` $\leftrightarrow$ n8n Workflow #3)
 - **[FR-4.1] Single-Use Token Validation (`ADR-007`):** Navigating to `/onboarding/[token]` hashes the URL token with `SHA-256` and verifies that `onboardingTokenHash` exists, `tokenExpiresAt > now()`, and `tokenUsedAt IS NULL`. If `tokenUsedAt` is already set, renders a read-only *"Onboarding Completed — Appointment Confirmed"* receipt.
@@ -177,10 +179,10 @@ All four n8n workflows are exported as declarative JSON files inside `/n8n/workf
 | :--- | :--- | :--- |
 | **Node 01** | `Webhook (POST)` | Listens on `/webhook/aegis-triage`. Stores `patient_uuid` in workflow static/execution metadata for DLQ tracking. |
 | **Node 02** | `Code (TypeScript)` | Computes `HMAC-SHA256` using `$env.AEGIS_WEBHOOK_SECRET`. Throws `401 Unauthorized` if signature mismatches or timestamp drift `>300s`. |
-| **Node 03** | `AI Agent (Tools Agent)` | Connected to **OpenAI Chat Model (`gpt-4o-mini`)** + **Structured Output Parser**. Wraps `scrubbed_symptoms` in `<untrusted_symptom_text>` tags. |
+| **Node 03** | `AI Agent (Tools Agent)` | Connected to **Google Gemini Chat Model (`gemini-3.1-flash-lite`)** + **Structured Output Parser**. Wraps `scrubbed_symptoms` in `<untrusted_symptom_text>` tags. |
 | **Node 04a/b** | `HTTP Request Tool` | Bound tools invoked dynamically by Node 03: queries `GET /api/mock/insurance?payer=...` and `GET /api/mock/routing-rules` on Next.js server. |
 | **Node 05** | `IF / Switch (Emergency Check)` | Checks if `urgency_level === "CRITICAL"`. If true, triggers instant `[RED ALERT]` Slack/Discord webhook and sets emergency flag. |
-| **Node 06** | `HubSpot (Contact Upsert)` | Upserts Contact via pseudonymous email (`<short_uuid>@vault.aegisflow.internal`); sets `firstname = Patient_<short_uuid>`, `lifecyclestage = lead`. |
+| **Node 06** | `HubSpot (Contact Upsert)` | Upserts Contact via pseudonymous email (`<patient_uuid>@vault.example.com`); sets `firstname = Patient_<short_uuid>`, `lifecyclestage = lead`. |
 | **Node 07** | `HubSpot (Deal Upsert)` | Deduplicates open Deals by `aegis_patient_uuid`, then creates/updates Deal in *Patient Intake Pipeline* (`Stage: AI Triaged`, `vault_review_url`). |
 | **Node 08** | `HTTP Request (POST)` | Signs and dispatches AI triage JSON + `hubspotContactId` + `hubspotDealId` back to Next.js `POST /api/webhooks/n8n-callback`. |
 
@@ -262,7 +264,7 @@ BEFORE UPDATE OR DELETE ON "AuditLog" FOR EACH ROW EXECUTE FUNCTION prevent_audi
 
 1. **Prompt Injection & PII Leakage to LLMs (Tampering / Information Disclosure):** Mitigated by running contextual known-entity + 6-pass regex redaction (`scrubber.ts`) on the Next.js server *before* n8n or OpenAI receives the text, isolating input in `<untrusted_symptom_text>` XML tags (`ADR-005`), and enforcing dual JSON Schema + Zod validation.
 2. **Webhook Spoofing, Replay Attacks & Duplicate Deals (Spoofing / Elevation):** Mitigated via bidirectional `HMAC-SHA256` signature headers bound to a 300-second timestamp window and two-layer idempotency (`WebhookIdempotency` unique key + HubSpot pseudonymous email upsert).
-3. **Third-Party CRM & Log Honeypots (Information Disclosure):** Mitigated by strict HubSpot pseudonymization (`<short_uuid>@vault.aegisflow.internal`), blind notification dispatch (`/api/internal/notify`), and configuring Dockerized n8n with `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`.
+3. **Third-Party CRM & Log Honeypots (Information Disclosure):** Mitigated by strict HubSpot pseudonymization (`<patient_uuid>@vault.example.com`), blind notification dispatch (`/api/internal/notify`), and configuring Dockerized n8n with `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`.
 4. **Audit Log Tampering (Repudiation):** Mitigated by the PostgreSQL `BEFORE UPDATE OR DELETE` trigger on `"AuditLog"` that raises a database-level exception on any mutation attempt.
 5. **Stale Onboarding Link Replay (Elevation of Privilege):** Mitigated by storing only `SHA-256(token)` with a 48-hour expiry and burning the token (`tokenUsedAt = now()`) upon completion (`ADR-007`).
 
@@ -272,7 +274,7 @@ BEFORE UPDATE OR DELETE ON "AuditLog" FOR EACH ROW EXECUTE FUNCTION prevent_audi
 
 Full standalone files are maintained in [`GLOSSARY.md`](file:///D:/vscode/Personal/AegisFlow/GLOSSARY.md) and [`docs/adr/`](file:///D:/vscode/Personal/AegisFlow/docs/adr/):
 
-- **[ADR-001: Zero-PHI HubSpot Pseudonymization](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md):** HubSpot stores only `<short_uuid>@vault.aegisflow.internal` and `Patient_<short_uuid>`. Actual emails/SMS are sent via Next.js blind dispatch (`POST /api/internal/notify`).
+- **[ADR-001: Zero-PHI HubSpot Pseudonymization](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md):** HubSpot stores only `<patient_uuid>@vault.example.com` and `Patient_<short_uuid>`. Actual emails/SMS are sent via Next.js blind dispatch (`POST /api/internal/notify`).
 - **[ADR-002: Contextual Known-Entity & Regex Scrubber](file:///D:/vscode/Personal/AegisFlow/docs/adr/002-contextual-known-entity-scrubber.md):** Combines dynamic matching of submitted form fields (`firstName`, `lastName`, `email`, `phone`, `memberId`) with a 6-pass regex pipeline for sub-5ms zero-dependency redaction.
 - **[ADR-003: Asynchronous Webhook Dispatch with Callback Status Polling](file:///D:/vscode/Personal/AegisFlow/docs/adr/003-async-webhook-callback-polling.md):** `POST /api/intake` returns `202 Accepted` in `<150ms` while the X-Ray UI polls `/api/intake/[id]/telemetry` until n8n completes callback.
 - **[ADR-004: Outbox State & n8n Dead-Letter Queue (DLQ) Recovery](file:///D:/vscode/Personal/AegisFlow/docs/adr/004-outbox-and-dlq-failure-recovery.md):** Handles network failures via `WEBHOOK_RETRY_PENDING` outbox state and catches mid-flight n8n failures via `error-dlq.json` callback (`TRIAGE_FAILED_MANUAL_REVIEW`).

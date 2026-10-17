@@ -45,7 +45,7 @@ Build the pure, zero-dependency security modules in `src/lib/` before wiring any
 1. **`src/lib/crypto.ts` — Envelope Encryption & Hashing**
    - `encryptPhi(plaintext: string): string` and `decryptPhi(payload: string): string` using Node `crypto` (`aes-256-gcm`, 12-byte IV, 16-byte auth tag) formatted as `v1:{iv_hex}:{authTag_hex}:{ciphertext_hex}`.
    - `sha256Hash(input: string): string` for deterministic `emailHash`, `idempotency_key`, and `onboardingTokenHash` ([ADR-007](file:///D:/vscode/Personal/AegisFlow/docs/adr/007-two-layer-idempotency-and-burned-tokens.md)).
-   - `generatePseudonymousAlias(uuid: string)` returning `{ firstName: "Patient_<short_uuid>", email: "<short_uuid>@vault.aegisflow.internal" }` ([ADR-001](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md)).
+   - `generatePseudonymousAlias(uuid: string)` returning `{ firstName: "Patient_<short_uuid>", email: "<patient_uuid>@vault.example.com" }` ([ADR-001](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md)).
 2. **`src/lib/hmac.ts` — Replay-Protected Webhook Signing**
    - `signWebhookPayload(rawBody: string, timestamp?: number)` producing `x-aegis-signature` and `x-aegis-timestamp`.
    - `verifyWebhookSignature(rawBody: string, signature: string, timestampHeader: string)` using `crypto.timingSafeEqual` and enforcing a `±300s` replay window.
@@ -81,7 +81,7 @@ Build the asynchronous event-driven API layer in `src/app/api/` so the entire 5-
 3. **Clinician Approval, Blind Notify & Onboarding Completion Endpoints**
    - `POST /api/auth/demo-session`: Mints the 1-click `dr_chen_demo` JWT cookie ([ADR-006](file:///D:/vscode/Personal/AegisFlow/docs/adr/006-frictionless-demo-rbac-session.md)).
    - `POST /api/vault/[id]/approve`: Verifies Clinician JWT, generates 32-byte raw onboarding token, stores `onboardingTokenHash = sha256(token)` (`+48h` expiry), and triggers n8n Workflow #2.
-   - `POST /api/internal/notify`: Verifies HMAC signature from n8n #2, decrypts patient email/phone in memory, and dispatches the magic link (`/onboarding/[token]`) via Resend (or logs to telemetry in demo mode) ([ADR-001](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md)).
+   - `POST /api/internal/notify`: Verifies HMAC signature from n8n #2, decrypts patient email/phone in memory, and dispatches the magic link (`/onboarding/[token]`) via Gmail (or returns PREVIEW_ONLY in demo mode) ([ADR-001](file:///D:/vscode/Personal/AegisFlow/docs/adr/001-zero-phi-hubspot-pseudonymization.md)).
    - `POST /api/onboarding/[token]/complete`: Verifies single-use token, saves encrypted KYC metadata + Telehealth NPP e-signature + appointment slot, burns token (`tokenUsedAt = now()`), and triggers n8n Workflow #3 ([ADR-007](file:///D:/vscode/Personal/AegisFlow/docs/adr/007-two-layer-idempotency-and-burned-tokens.md)).
 
 ---

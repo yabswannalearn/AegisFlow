@@ -1,8 +1,8 @@
 # ADR-001: Zero-PHI HubSpot Pseudonymization
 
 - **Status:** Accepted
-- **Context:** Under HIPAA, sending a patient's plaintext Name + Email to a standard HubSpot CRM instance creates a compliance violation because it links an identifiable person to a healthcare intake pipeline without a $3,600/mo HubSpot Enterprise BAA.
-- **Decision:** Implement **Strict Pseudonymization** for all HubSpot records. HubSpot Contacts are created with `email: <short_uuid>@vault.aegisflow.internal` and `firstname: Patient_<short_uuid>`. When n8n needs to trigger an email or SMS during onboarding, n8n sends a signed request to Next.js (`POST /api/internal/notify`), which decrypts the patient's email/phone in memory and dispatches via Resend/Twilio.
+- **Context:** The CRM should not receive direct patient identifiers. Compliance depends on data use, provider agreements, and operational controls; pseudonymization alone does not establish it.
+- **Decision (amended with explicit user approval on 2026-10-16):** Implement **Strict Pseudonymization** for all HubSpot records. HubSpot rejects the original `.internal` email domain, so Contacts use `email: <patient_uuid>@vault.example.com` and `firstname: Patient_<short_uuid>`. The full UUID prevents collisions in the contact upsert key. `example.com` is reserved for examples; CRM aliases are never notification recipients. When n8n requests a notification, it sends only a signed patient UUID to Next.js (`POST /api/internal/notify`), which decrypts the actual address in memory and dispatches through Gmail. The user explicitly selected Gmail instead of Resend. Portfolio mode permits delivery only to a configured test inbox and otherwise reports `PREVIEW_ONLY`.
 - **Consequences:** 
-  - *(+)* Zero plaintext PII/PHI ever leaves our Postgres database; free HubSpot Developer Sandbox remains 100% compliant by design.
+  - *(+)* HubSpot receives pseudonymous identity and a protected vault link. The notification provider receives the actual recipient and invitation; n8n/Gemini receive scrubbed symptoms. These boundaries reduce exposure without guaranteeing de-identification or compliance.
   - *(-)* Marketing/sales teams viewing HubSpot cannot see real names inside HubSpot UI; they must click the `vault_review_url` property to resolve identity inside the RBAC-protected Next.js Vault.
